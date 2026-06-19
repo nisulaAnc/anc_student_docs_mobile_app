@@ -32,12 +32,6 @@ export const registerStudent = (data) => api.post('/cf/register', data);
 
 export const verifyCfPin = (pin) => api.post('/cf/verify-pin', { pin });
 
-export const counsellorRequestOTP = (token) =>
-  api.post('/cf/counsellor/request-otp', { token });
-
-export const counsellorVerifyOTP = (token, otp) =>
-  api.post('/cf/counsellor/verify-otp', { token, otp });
-
 export const getCounsellorTokenInfo = (token) =>
   api.get('/cf/counsellor/token-info', { params: { token } });
 
@@ -48,12 +42,6 @@ export const selectProgram = (cf_token, program_label) =>
   api.post('/counsellor/select-program', { cf_token, program_label });
 
 // ── Student Portal ───────────────────────────────────────────────────
-export const studentRequestOTP = (token) =>
-  api.post('/student/request-otp', { token });
-
-export const studentVerifyOTP = (token, otp) =>
-  api.post('/student/verify-otp', { token, otp });
-
 export const getStudentTokenInfo = (token) =>
   api.get('/student/token-info', { params: { token } });
 

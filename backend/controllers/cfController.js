@@ -1,7 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const CfToken = require('../models/CfToken');
 const { getCounsellors, sheetAppend, SHEETS } = require('../config/googleSheets');
-const { sendEmail, emailHtml, generateOTP, otpEmailHtml } = require('../utils/email');
+const { sendEmail, emailHtml } = require('../utils/email');
 
 // GET /api/cf/counsellors
 const getCounsellorList = async (req, res) => {
@@ -82,50 +82,6 @@ const registerCF = async (req, res) => {
   res.json({ success: true, message: 'Registration submitted. Counsellor has been notified.', token });
 };
 
-// POST /api/cf/counsellor/request-otp
-// Body: { token }
-const counsellorRequestOTP = async (req, res) => {
-  const { token } = req.body;
-  const cfToken = await CfToken.findOne({ token, status: 'pending' });
-  if (!cfToken) return res.status(404).json({ success: false, message: 'Invalid or expired token.' });
-
-  const otp = generateOTP();
-  cfToken.otp = otp;
-  cfToken.otp_time = new Date();
-  cfToken.phase = 'otp_sent';
-  await cfToken.save();
-
-  const html = otpEmailHtml(cfToken.counsellor_name, otp, 'counsellor');
-  await sendEmail(cfToken.counsellor_email, 'ANC Student Docs – OTP Verification', html);
-
-  res.json({ success: true, message: `OTP sent to ${cfToken.counsellor_email}` });
-};
-
-// POST /api/cf/counsellor/verify-otp
-// Body: { token, otp }
-const counsellorVerifyOTP = async (req, res) => {
-  const { token, otp } = req.body;
-  const cfToken = await CfToken.findOne({ token, status: 'pending' });
-  if (!cfToken) return res.status(404).json({ success: false, message: 'Invalid token.' });
-
-  const otpAge = (Date.now() - new Date(cfToken.otp_time).getTime()) / 1000;
-  if (otpAge > 600) return res.status(400).json({ success: false, message: 'OTP expired.' });
-  if (cfToken.otp !== String(otp).trim()) return res.status(400).json({ success: false, message: 'Invalid OTP.' });
-
-  cfToken.phase = 'otp_verified';
-  await cfToken.save();
-
-  res.json({
-    success: true,
-    message: 'OTP verified.',
-    data: {
-      student_name: cfToken.student_name,
-      student_email: cfToken.student_email,
-      cf_number: cfToken.cf_number,
-    },
-  });
-};
-
 // GET /api/cf/counsellor/token-info?token=xxx
 const getCounsellorTokenInfo = async (req, res) => {
   const { token } = req.query;
@@ -149,4 +105,4 @@ const verifyCfPin = (req, res) => {
   return res.json({ success: true, message: 'PIN verified.' });
 };
 
-module.exports = { getCounsellorList, registerCF, counsellorRequestOTP, counsellorVerifyOTP, getCounsellorTokenInfo, verifyCfPin };
+module.exports = { getCounsellorList, registerCF, getCounsellorTokenInfo, verifyCfPin };

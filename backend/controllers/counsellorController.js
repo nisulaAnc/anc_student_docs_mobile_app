@@ -18,9 +18,9 @@ const selectProgram = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Token and program required.' });
   }
 
-  const cfToken = await CfToken.findOne({ token: cf_token, phase: 'otp_verified' });
+  const cfToken = await CfToken.findOne({ token: cf_token, status: 'pending' });
   if (!cfToken) {
-    return res.status(400).json({ success: false, message: 'Token not valid or OTP not yet verified.' });
+    return res.status(400).json({ success: false, message: 'Token not valid or has already been used.' });
   }
 
   const programDetail = await getProgramDetailsByLabel(program_label);

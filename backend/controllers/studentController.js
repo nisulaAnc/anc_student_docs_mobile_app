@@ -2,7 +2,7 @@ const StudentToken = require('../models/StudentToken');
 const Submission = require('../models/Submission');
 const { getDocumentsForProduct } = require('../utils/productDocuments');
 const { sheetAppend, SHEETS, getCounsellors, uploadFileToDrive, SUBMISSION_DOC_COLUMNS } = require('../config/googleSheets');
-const { sendEmail, generateOTP, otpEmailHtml, emailHtml } = require('../utils/email');
+const { sendEmail, emailHtml } = require('../utils/email');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 
@@ -12,54 +12,6 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
-
-// POST /api/student/request-otp
-const studentRequestOTP = async (req, res) => {
-  const { token } = req.body;
-  const studentToken = await StudentToken.findOne({ token, status: 'pending' });
-  if (!studentToken) return res.status(404).json({ success: false, message: 'Invalid or expired token.' });
-
-  const otp = generateOTP();
-  studentToken.otp = otp;
-  studentToken.otp_time = new Date();
-  studentToken.phase = 'otp_sent';
-  await studentToken.save();
-
-  const html = otpEmailHtml(studentToken.student_name, otp, 'student');
-  await sendEmail(studentToken.student_email, 'ANC Student Docs – OTP Verification', html);
-
-  res.json({ success: true, message: `OTP sent to ${studentToken.student_email}` });
-};
-
-// POST /api/student/verify-otp
-const studentVerifyOTP = async (req, res) => {
-  const { token, otp } = req.body;
-  const studentToken = await StudentToken.findOne({ token, status: 'pending' });
-  if (!studentToken) return res.status(404).json({ success: false, message: 'Invalid token.' });
-
-  const otpAge = (Date.now() - new Date(studentToken.otp_time).getTime()) / 1000;
-  if (otpAge > 600) return res.status(400).json({ success: false, message: 'OTP expired.' });
-  if (studentToken.otp !== String(otp).trim()) return res.status(400).json({ success: false, message: 'Invalid OTP.' });
-
-  studentToken.phase = 'otp_verified';
-  await studentToken.save();
-
-  const requiredDocs = getDocumentsForProduct(studentToken.product_code);
-
-  res.json({
-    success: true,
-    message: 'OTP verified.',
-    data: {
-      student_name: studentToken.student_name,
-      student_email: studentToken.student_email,
-      cf_number: studentToken.cf_number,
-      program: studentToken.program,
-      product_code: studentToken.product_code,
-      counsellor_name: studentToken.counsellor_name,
-      required_documents: requiredDocs,
-    },
-  });
-};
 
 // GET /api/student/token-info?token=xxx
 const getStudentTokenInfo = async (req, res) => {
@@ -78,8 +30,8 @@ const getStudentTokenInfo = async (req, res) => {
 const submitDocuments = async (req, res) => {
   const { token } = req.body;
   const studentToken = await StudentToken.findOne({ token });
-  if (!studentToken || studentToken.phase !== 'otp_verified') {
-    return res.status(400).json({ success: false, message: 'Token not valid or OTP not verified.' });
+  if (!studentToken || studentToken.status !== 'pending') {
+    return res.status(400).json({ success: false, message: 'Token not valid or has already been used.' });
   }
 
   const requiredDocs = getDocumentsForProduct(studentToken.product_code);
@@ -263,4 +215,4 @@ const getSubmission = async (req, res) => {
   res.json({ success: true, data: submission });
 };
 
-module.exports = { studentRequestOTP, studentVerifyOTP, getStudentTokenInfo, submitDocuments, getSubmission };
+module.exports = { getStudentTokenInfo, submitDocuments, getSubmission };

@@ -37,7 +37,7 @@ export default function HomeScreen({ navigation }) {
       icon: 'shield-checkmark',
       color: COLORS.blue,
       label: 'Counsellor Portal',
-      desc: 'Verify OTP and select the student programme',
+      desc: 'Select the student programme and notify the student',
       protected: false,
     },
     {
@@ -46,7 +46,7 @@ export default function HomeScreen({ navigation }) {
       icon: 'documents',
       color: COLORS.green,
       label: 'Student Portal',
-      desc: 'Verify OTP and submit required documents',
+      desc: 'Submit required documents for registration',
       protected: false,
     },
   ];

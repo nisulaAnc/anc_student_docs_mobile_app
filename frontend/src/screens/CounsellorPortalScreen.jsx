@@ -8,15 +8,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TopBar from '../components/TopBar';
 import CardHeader from '../components/CardHeader';
 import AlertBox from '../components/AlertBox';
-import OTPInput from '../components/OTPInput';
 import Button from '../components/Button';
 import {
-  getCounsellorTokenInfo, counsellorRequestOTP,
-  counsellorVerifyOTP, getPrograms, selectProgram,
+  getCounsellorTokenInfo, getPrograms, selectProgram,
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 
-const PHASE = { LOAD: 0, REQUEST: 1, VERIFY: 2, PROGRAM: 3, DONE: 4 };
+const PHASE = { LOAD: 0, PROGRAM: 1, DONE: 2, ERROR: 3 };
 
 export default function CounsellorPortalScreen({ navigation, route }) {
   const { token } = route.params;
@@ -25,8 +23,6 @@ export default function CounsellorPortalScreen({ navigation, route }) {
   const styles = createStyles(COLORS);
   const [phase, setPhase] = useState(PHASE.LOAD);
   const [data, setData] = useState(null);
-  const [otp, setOtp] = useState('');
-  const [otpErr, setOtpErr] = useState('');
   const [programs, setPrograms] = useState([]);
   const [selected, setSelected] = useState('');
   const [showPicker, setShowPicker] = useState(false);
@@ -40,34 +36,22 @@ export default function CounsellorPortalScreen({ navigation, route }) {
     try {
       const res = await getCounsellorTokenInfo(token);
       setData(res.data.data);
-      setPhase(PHASE.REQUEST);
+      await loadPrograms();
     } catch (e) {
       setAlert({ type: 'error', msg: e.message });
+      setPhase(PHASE.ERROR);
     }
   };
 
-  const requestOTP = async () => {
+  const loadPrograms = async () => {
     setLoading(true); setAlert(null);
     try {
-      const res = await counsellorRequestOTP(token);
-      setAlert({ type: 'success', msg: res.data.message });
-      setPhase(PHASE.VERIFY);
-    } catch (e) {
-      setAlert({ type: 'error', msg: e.response?.data?.message || e.message });
-    } finally { setLoading(false); }
-  };
-
-  const verifyOTP = async () => {
-    if (otp.replace(/\s/g, '').length < 6) { setOtpErr('Enter the complete 6-digit code'); return; }
-    setOtpErr(''); setLoading(true);
-    try {
-      await counsellorVerifyOTP(token, otp);
       const r = await getPrograms();
       setPrograms(r.data.data || []);
       setAlert(null);
       setPhase(PHASE.PROGRAM);
     } catch (e) {
-      setOtpErr(e.response?.data?.message || 'Invalid OTP. Please try again.');
+      setAlert({ type: 'error', msg: e.response?.data?.message || e.message });
     } finally { setLoading(false); }
   };
 
@@ -103,38 +87,19 @@ export default function CounsellorPortalScreen({ navigation, route }) {
           </View>
         )}
 
-        {phase === PHASE.REQUEST && (
+        {phase === PHASE.ERROR && (
           <View style={styles.card}>
-            <CardHeader eyebrow="Step 2 · Counsellor Verification" title="Identity Verification" subtitle="Confirm your identity to proceed." />
+            <CardHeader eyebrow="Problem" title="Unable to load counsellor portal" subtitle="Please check your link or try again later." />
             <View style={styles.body}>
-              {data && <InfoGrid />}
-              <Text style={styles.secLabel}>Verify Your Email</Text>
-              <Text style={styles.desc}>An OTP will be sent to <Text style={styles.bold}>{data?.counsellor_email}</Text>.</Text>
-              <Button title="Send OTP to My Email" onPress={requestOTP} loading={loading} style={{ marginTop: 20 }}
-                icon={<Ionicons name="shield-checkmark" size={16} color="#fff" />} />
-            </View>
-          </View>
-        )}
-
-        {phase === PHASE.VERIFY && (
-          <View style={styles.card}>
-            <CardHeader eyebrow="Step 2 · Counsellor Verification" title="Enter Your OTP"
-              subtitle={`We sent a 6-digit code to ${data?.counsellor_email}`} />
-            <View style={[styles.body, { alignItems: 'center' }]}>
-              <Text style={styles.secLabel}>Enter 6-digit code</Text>
-              <OTPInput value={otp} onChange={setOtp} error={otpErr} />
-              <Button title="Verify & Continue" onPress={verifyOTP} loading={loading}
-                icon={<Ionicons name="arrow-forward" size={16} color="#fff" />} />
-              <TouchableOpacity onPress={requestOTP} style={styles.resend}>
-                <Text style={styles.resendTxt}>↺ Resend OTP</Text>
-              </TouchableOpacity>
+              <Text style={styles.desc}>{alert?.msg || 'There was an issue loading this session.'}</Text>
+              <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 20 }} />
             </View>
           </View>
         )}
 
         {phase === PHASE.PROGRAM && (
           <View style={styles.card}>
-            <CardHeader eyebrow="Step 2 · Programme Selection" title="Select Programme" subtitle="Identity verified ✓ — Choose the student's programme." />
+            <CardHeader eyebrow="Step 2 · Programme Selection" title="Select Programme" subtitle="Choose the student's programme." />
             <View style={styles.body}>
               {data && <InfoGrid />}
               <Text style={styles.secLabel}>Programme</Text>
@@ -151,22 +116,8 @@ export default function CounsellorPortalScreen({ navigation, route }) {
           </View>
         )}
 
-        {phase === PHASE.DONE && (
-          <View style={styles.card}>
-            <CardHeader eyebrow="Complete" title="All Done!" subtitle="The student has been notified." variant="green" />
-            <View style={[styles.body, { alignItems: 'center' }]}>
-              <View style={styles.successIcon}>
-                <Ionicons name="checkmark" size={36} color={COLORS.green} />
-              </View>
-              <Text style={styles.doneTitle}>Thank You!</Text>
-              <Text style={styles.doneDesc}>Programme selected: <Text style={styles.bold}>{selected}</Text>{'\n\n'}The student has been emailed a link to submit their documents.</Text>
-              <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 24 }} />
-            </View>
-          </View>
-        )}
       </ScrollView>
 
-      {/* Programme picker */}
       <Modal visible={showPicker} animationType="slide" transparent>
         <View style={styles.modalBg}>
           <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>

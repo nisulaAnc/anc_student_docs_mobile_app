@@ -7,16 +7,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TopBar from '../components/TopBar';
 import CardHeader from '../components/CardHeader';
 import AlertBox from '../components/AlertBox';
-import OTPInput from '../components/OTPInput';
 import Button from '../components/Button';
 import UploadBox from '../components/UploadBox';
 import {
-  getStudentTokenInfo, studentRequestOTP,
-  studentVerifyOTP, submitDocuments,
+  getStudentTokenInfo, submitDocuments,
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 
-const PHASE = { LOAD: 0, REQUEST: 1, VERIFY: 2, UPLOAD: 3, DONE: 4 };
+const PHASE = { LOAD: 0, UPLOAD: 1, DONE: 2, ERROR: 3 };
 
 export default function StudentPortalScreen({ navigation, route }) {
   const { token } = route.params;
@@ -27,8 +25,6 @@ export default function StudentPortalScreen({ navigation, route }) {
   const [phase, setPhase] = useState(PHASE.LOAD);
   const [data, setData] = useState(null);
   const [requiredDocs, setRequiredDocs] = useState([]);
-  const [otp, setOtp] = useState('');
-  const [otpErr, setOtpErr] = useState('');
   const [files, setFiles] = useState({});
   const [agreementFile, setAgreementFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -40,37 +36,12 @@ export default function StudentPortalScreen({ navigation, route }) {
     try {
       const res = await getStudentTokenInfo(token);
       setData(res.data.data);
-      setPhase(PHASE.REQUEST);
-    } catch (e) {
-      setAlert({ type: 'error', msg: e.message });
-      setPhase(PHASE.REQUEST);
-    }
-  };
-
-  const requestOTP = async () => {
-    setLoading(true); setAlert(null);
-    try {
-      const res = await studentRequestOTP(token);
-      setAlert({ type: 'success', msg: res.data.message });
-      setPhase(PHASE.VERIFY);
-    } catch (e) {
-      setAlert({ type: 'error', msg: e.response?.data?.message || e.message });
-    } finally { setLoading(false); }
-  };
-
-  const verifyOTP = async () => {
-    if (otp.replace(/\s/g, '').length < 6) { setOtpErr('Enter the complete 6-digit code'); return; }
-    setOtpErr(''); setLoading(true);
-    try {
-      const res = await studentVerifyOTP(token, otp);
-      const docs = res.data.data?.required_documents || [];
-      setRequiredDocs(docs);
-      setFiles({});
-      setAlert(null);
+      setRequiredDocs(res.data.data?.required_documents || []);
       setPhase(PHASE.UPLOAD);
     } catch (e) {
-      setOtpErr(e.response?.data?.message || 'Invalid OTP. Try again.');
-    } finally { setLoading(false); }
+      setAlert({ type: 'error', msg: e.message });
+      setPhase(PHASE.ERROR);
+    }
   };
 
   const handleFile = (index, file) => setFiles((prev) => ({ ...prev, [index]: file }));
@@ -124,34 +95,12 @@ export default function StudentPortalScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* ── REQUEST OTP ── */}
-        {phase === PHASE.REQUEST && (
+        {phase === PHASE.ERROR && (
           <View style={styles.card}>
-            <CardHeader eyebrow="Step 3 · Identity Verification" title="Student Verification"
-              subtitle="Confirm your identity before uploading documents." />
+            <CardHeader eyebrow="Problem" title="Unable to load student portal" subtitle="Please check your link or try again later." />
             <View style={styles.body}>
-              {data && <StudentInfo data={data} infoStyles={infoStyles} COLORS={COLORS} />}
-              <View style={styles.divider} />
-              <Text style={styles.desc}>An OTP will be sent to <Text style={styles.bold}>{data?.student_email}</Text> to verify your identity.</Text>
-              <Button title="Send OTP to My Email" onPress={requestOTP} loading={loading} style={{ marginTop: 20 }}
-                icon={<Ionicons name="shield-checkmark" size={16} color="#fff" />} />
-            </View>
-          </View>
-        )}
-
-        {/* ── VERIFY OTP ── */}
-        {phase === PHASE.VERIFY && (
-          <View style={styles.card}>
-            <CardHeader eyebrow="Step 3 · Identity Verification" title="Enter Your OTP"
-              subtitle={`We sent a 6-digit code to ${data?.student_email}`} />
-            <View style={[styles.body, { alignItems: 'center' }]}>
-              <Text style={styles.secLabel}>Enter 6-digit code</Text>
-              <OTPInput value={otp} onChange={setOtp} error={otpErr} />
-              <Button title="Verify & Continue" onPress={verifyOTP} loading={loading}
-                icon={<Ionicons name="arrow-forward" size={16} color="#fff" />} />
-              <TouchableOpacity onPress={requestOTP} style={styles.resend}>
-                <Text style={styles.resendTxt}>↺ Resend OTP</Text>
-              </TouchableOpacity>
+              <Text style={styles.desc}>{alert?.msg || 'There was an issue loading your registration session.'}</Text>
+              <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 20 }} />
             </View>
           </View>
         )}
