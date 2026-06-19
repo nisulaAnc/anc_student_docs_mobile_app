@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "ANC Student Docs",
+    "slug": "anc-student-docs",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/logo.png",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1E3A8A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ancedu.studentdocs",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Required to scan QR codes and capture documents.",
+        "NSPhotoLibraryUsageDescription": "Required to upload documents from your photo library."
+      }
+    },
+    "android": {
+      "package": "com.ancedu.studentdocs",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-camera",
+      "expo-font",
+      "expo-web-browser"
+    ]
+  }
+}
