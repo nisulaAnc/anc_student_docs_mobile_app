@@ -41,15 +41,33 @@ const SHEETS = {
 };
 
 function getAuthClient() {
+  const scopes = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive',
+  ];
+
+  if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+    return new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key: privateKey,
+      },
+      scopes,
+    });
+  }
+
   const credPath = path.resolve(__dirname, '../config/credentials.json');
-  const auth = new google.auth.GoogleAuth({
-    keyFile: credPath,
-    scopes: [
-      'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/drive',
-    ],
-  });
-  return auth;
+  if (fs.existsSync(credPath)) {
+    return new google.auth.GoogleAuth({
+      keyFile: credPath,
+      scopes,
+    });
+  }
+
+  throw new Error(
+    'Google credentials are not configured. Set GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY in env, or provide credentials.json locally.'
+  );
 }
 
 async function getDriveService() {
