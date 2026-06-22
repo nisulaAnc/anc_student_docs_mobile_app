@@ -118,6 +118,13 @@ export default function CFRegistrationScreen({ navigation }) {
                 <Ionicons name="close" size={24} color={COLORS.text} />
               </TouchableOpacity>
             </View>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search counsellor name or email..."
+              placeholderTextColor={COLORS.muted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
             {loadingC
               ? <ActivityIndicator color={COLORS.navy} style={{ margin: 20 }} />
               : (

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  TextInput, KeyboardAvoidingView, Platform,
+  TextInput, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,13 +51,12 @@ export default function QRScanScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => setShowManual(true)} style={{ marginTop: 16 }}>
           <Text style={[styles.link, { color: COLORS.accent }]}>Enter token manually instead</Text>
         </TouchableOpacity>
-        {showManual && (
-          <ManualSheet
-            token={manualToken} setToken={setManualToken}
-            onGo={goToPortal} onClose={() => setShowManual(false)}
-            COLORS={COLORS}
-          />
-        )}
+        <ManualSheet
+          visible={showManual}
+          token={manualToken} setToken={setManualToken}
+          onGo={goToPortal} onClose={() => setShowManual(false)}
+          insets={insets} COLORS={COLORS}
+        />
       </View>
     );
   }
@@ -106,47 +105,57 @@ export default function QRScanScreen({ navigation, route }) {
         </View>
       </View>
 
-      {showManual && (
-        <ManualSheet
-          token={manualToken} setToken={setManualToken}
-          onGo={goToPortal} onClose={() => setShowManual(false)}
-          insets={insets} COLORS={COLORS}
-        />
-      )}
+      {/* Manual entry — rendered as a Modal so it fully covers the camera */}
+      <ManualSheet
+        visible={showManual}
+        token={manualToken} setToken={setManualToken}
+        onGo={goToPortal} onClose={() => setShowManual(false)}
+        insets={insets} COLORS={COLORS}
+      />
     </View>
   );
 }
 
-function ManualSheet({ token, setToken, onGo, onClose, insets = {}, COLORS }) {
+function ManualSheet({ visible, token, setToken, onGo, onClose, insets = {}, COLORS }) {
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.manualOverlay}
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
     >
-      <View style={[styles.manualSheet, { paddingBottom: (insets.bottom || 0) + 16, backgroundColor: COLORS.white }]}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <Text style={[styles.sheetTitle, { color: COLORS.text }]}>Enter Token Manually</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={22} color={COLORS.text} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.manualOverlay}
+      >
+        {/* Tap outside sheet to dismiss */}
+        <TouchableOpacity style={styles.manualBackdrop} activeOpacity={1} onPress={onClose} />
+
+        <View style={[styles.manualSheet, { paddingBottom: (insets.bottom || 0) + 16, backgroundColor: COLORS.white }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <Text style={[styles.sheetTitle, { color: COLORS.text }]}>Enter Token Manually</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={22} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={[styles.tokenInput, { borderColor: COLORS.border, color: COLORS.navy, backgroundColor: COLORS.bg }]}
+            placeholder="Enter 8-digit token here..."
+            placeholderTextColor={COLORS.muted}
+            value={token}
+            onChangeText={setToken}
+            autoFocus={true}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="numeric"
+            maxLength={8}
+          />
+          <TouchableOpacity style={[styles.goBtn, { backgroundColor: COLORS.navy }]} onPress={() => onGo(token)}>
+            <Text style={styles.goBtnTxt}>Continue →</Text>
           </TouchableOpacity>
         </View>
-        <TextInput
-          style={[styles.tokenInput, { borderColor: COLORS.border, color: COLORS.navy, backgroundColor: COLORS.bg }]}
-          placeholder="Enter 8-digit token here..."
-          placeholderTextColor={COLORS.muted}
-          value={token}
-          onChangeText={setToken}
-          autoFocus={true}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="numeric"
-          maxLength={8}
-        />
-        <TouchableOpacity style={[styles.goBtn, { backgroundColor: COLORS.navy }]} onPress={() => onGo(token)}>
-          <Text style={styles.goBtnTxt}>Continue →</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -171,7 +180,8 @@ const styles = StyleSheet.create({
   rescanTxt: { color: '#fff', fontWeight: '600' },
   manualBtn: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.45)', borderRadius: 10 },
   manualTxt: { color: '#fff', fontWeight: '600' },
-  manualOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  manualOverlay: { flex: 1, justifyContent: 'flex-end' },
+  manualBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   manualSheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 22 },
   sheetTitle: { fontSize: 17, fontWeight: '700' },
   tokenInput: { borderWidth: 1.5, borderRadius: 12, padding: 12, fontSize: 13, minHeight: 54, marginBottom: 14 },

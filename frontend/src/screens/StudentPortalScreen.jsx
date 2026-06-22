@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
+  Modal, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +30,8 @@ export default function StudentPortalScreen({ navigation, route }) {
   const [agreementFile, setAgreementFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState(null);
+  const [showPartialWarning, setShowPartialWarning] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState(null); // { complete, missing_docs }
 
   useEffect(() => { loadToken(); }, []);
 
@@ -45,26 +48,58 @@ export default function StudentPortalScreen({ navigation, route }) {
   };
 
   const handleFile = (index, file) => setFiles((prev) => ({ ...prev, [index]: file }));
-  const handleRemove = (index) => setFiles((prev) => { const c = { ...prev }; delete c[index]; return c; });
+  const handleRemove = (index, newValue = null) => setFiles((prev) => { 
+    const c = { ...prev }; 
+    if (newValue) c[index] = newValue;
+    else delete c[index]; 
+    return c; 
+  });
 
   const uploadedCount = Object.keys(files).length + (agreementFile ? 1 : 0);
   const totalDocs = requiredDocs.length + 1;
 
+  // Compute which documents are still missing
+  const getMissingDocs = () => {
+    const missing = [];
+    requiredDocs.forEach((docName, i) => {
+      if (!files[i]) missing.push(docName);
+    });
+    if (!agreementFile) missing.push('Agreement (signed)');
+    return missing;
+  };
+
   const handleSubmit = async () => {
     if (uploadedCount === 0) { setAlert({ type: 'error', msg: 'Please upload at least one document.' }); return; }
+    
+    // If not all documents are uploaded, block submission and show modal
+    const missingDocs = getMissingDocs();
+    if (missingDocs.length > 0) {
+      setShowPartialWarning(true);
+      return;
+    }
+    
+    // Proceed with submission
+    setShowPartialWarning(false);
     setLoading(true); setAlert(null);
     try {
       const fileArr = [];
       const labels = [];
       
       Object.keys(files).sort((a, b) => Number(a) - Number(b)).forEach((k) => {
-        const file = files[k];
+        const fileOrFiles = files[k];
         const label = requiredDocs[k] || `Document ${Number(k) + 1}`;
-        const ext = file.name.split('.').pop();
         const cleanLabel = label.replace(/[^a-zA-Z0-9_-]/g, '_');
-        const customName = `${data.cf_number}_${cleanLabel}.${ext}`;
         
-        fileArr.push({ ...file, name: customName });
+        const fArray = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+        const processedArray = fArray.map((file, i) => {
+          const ext = file.name.split('.').pop();
+          const customName = fArray.length > 1 
+            ? `${data.cf_number}_${cleanLabel}_${i + 1}.${ext}` 
+            : `${data.cf_number}_${cleanLabel}.${ext}`;
+          return { ...file, name: customName };
+        });
+        
+        fileArr.push(fArray.length > 1 ? processedArray : processedArray[0]);
         labels.push(label);
       });
 
@@ -74,7 +109,8 @@ export default function StudentPortalScreen({ navigation, route }) {
         finalAgreement = { ...agreementFile, name: `${data.cf_number}_Agreement.${ext}` };
       }
       
-      await submitDocuments(token, fileArr, labels, finalAgreement);
+      const res = await submitDocuments(token, fileArr, labels, finalAgreement);
+      setSubmissionResult(res.data);
       setPhase(PHASE.DONE);
     } catch (e) {
       setAlert({ type: 'error', msg: e.response?.data?.message || e.message });
@@ -84,6 +120,45 @@ export default function StudentPortalScreen({ navigation, route }) {
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <TopBar onBack={() => navigation.goBack()} rightText={data?.student_email} />
+
+      {/* Partial Submission Warning Modal */}
+      <Modal
+        visible={showPartialWarning}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPartialWarning(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIconRow}>
+              <Ionicons name="warning" size={32} color="#F59E0B" />
+            </View>
+            <Text style={styles.modalTitle}>Incomplete Submission</Text>
+            <Text style={styles.modalSubtitle}>
+              You must upload ALL required documents before submitting. The following are still missing:
+            </Text>
+            <View style={styles.modalMissingList}>
+              {getMissingDocs().map((doc, i) => (
+                <View key={i} style={styles.modalMissingRow}>
+                  <Ionicons name="close-circle" size={14} color="#DC2626" />
+                  <Text style={styles.modalMissingItem}>{doc}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.modalWarningNote}>
+              Please upload the missing files to complete your submission.
+            </Text>
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnCancel, { flex: 1 }]}
+                onPress={() => setShowPartialWarning(false)}
+              >
+                <Text style={styles.modalBtnCancelTxt}>Go Back & Upload Missing Docs</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {alert ? <AlertBox type={alert.type} message={alert.msg} /> : null}
 
@@ -152,7 +227,7 @@ export default function StudentPortalScreen({ navigation, route }) {
             <View style={styles.infoBanner}>
               <Ionicons name="information-circle" size={16} color={COLORS.blue} />
               <Text style={styles.infoBannerTxt}>
-                Max 5MB per file · Allowed: <Text style={{ fontWeight: '700' }}>PDF, JPG, PNG</Text>
+                Max 5MB per file. Formats: <Text style={{ fontWeight: '700' }}>PDF</Text> for documents, <Text style={{ fontWeight: '700' }}>JPG/PNG</Text> for photos and IDs.
               </Text>
             </View>
 
@@ -192,6 +267,7 @@ export default function StudentPortalScreen({ navigation, route }) {
                   file={agreementFile}
                   onFile={(idx, f) => setAgreementFile(f)}
                   onRemove={() => setAgreementFile(null)}
+                  allowedFormat="pdf"
                 />
               </View>
             </View>
@@ -200,16 +276,23 @@ export default function StudentPortalScreen({ navigation, route }) {
             <View style={styles.card}>
               <View style={styles.body}>
                 <Text style={styles.secLabel}>Upload Documents</Text>
-                {requiredDocs.map((label, i) => (
-                  <UploadBox
-                    key={i}
-                    index={i}
-                    label={label}
-                    file={files[i] || null}
-                    onFile={handleFile}
-                    onRemove={handleRemove}
-                  />
-                ))}
+                {requiredDocs.map((label, i) => {
+                  const labelLower = label.toLowerCase();
+                  const isImage = labelLower.includes('photograph') || 
+                                  labelLower.includes('nic') || 
+                                  labelLower === 'copy of national identity card (nic) or passport'.toLowerCase();
+                  return (
+                    <UploadBox
+                      key={i}
+                      index={i}
+                      label={label}
+                      file={files[i] || null}
+                      onFile={handleFile}
+                      onRemove={handleRemove}
+                      allowedFormat={isImage ? 'image' : 'pdf'}
+                    />
+                  );
+                })}
 
                 <Button
                   title={`Submit ${uploadedCount} Document${uploadedCount !== 1 ? 's' : ''}`}
@@ -228,21 +311,51 @@ export default function StudentPortalScreen({ navigation, route }) {
         {/* ── DONE ── */}
         {phase === PHASE.DONE && (
           <View style={styles.card}>
-            <CardHeader eyebrow="Complete" title="Registration Submitted!" subtitle="Your documents have been received." variant="green" />
-            <View style={[styles.body, { alignItems: 'center', paddingVertical: 36 }]}>
-              <View style={styles.successIcon}>
-                <Ionicons name="checkmark" size={36} color={COLORS.green} />
-              </View>
-              <Text style={styles.doneTitle}>Thank You, {data?.student_name}!</Text>
-              <Text style={styles.doneDesc}>
-                Your submission is complete. You will be contacted if any further action is required.
-              </Text>
-              <View style={styles.doneBadge}>
-                <Ionicons name="document-text" size={16} color={COLORS.navy} />
-                <Text style={styles.doneBadgeTxt}>{uploadedCount} document{uploadedCount !== 1 ? 's' : ''} uploaded</Text>
-              </View>
-              <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 24 }} />
-            </View>
+            {submissionResult?.complete ? (
+              <>
+                <CardHeader eyebrow="Complete" title="Registration Submitted!" subtitle="Your documents have been received." variant="green" />
+                <View style={[styles.body, { alignItems: 'center', paddingVertical: 36 }]}>
+                  <View style={styles.successIcon}>
+                    <Ionicons name="checkmark" size={36} color={COLORS.green} />
+                  </View>
+                  <Text style={styles.doneTitle}>Thank You, {data?.student_name}!</Text>
+                  <Text style={styles.doneDesc}>
+                    Your submission is complete. You will be contacted if any further action is required.
+                  </Text>
+                  <View style={styles.doneBadge}>
+                    <Ionicons name="document-text" size={16} color={COLORS.navy} />
+                    <Text style={styles.doneBadgeTxt}>{uploadedCount} document{uploadedCount !== 1 ? 's' : ''} uploaded</Text>
+                  </View>
+                  <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 24 }} />
+                </View>
+              </>
+            ) : (
+              <>
+                <CardHeader eyebrow="Incomplete" title="Missing Documents" subtitle="Your submission was saved but is not complete." variant="warning" />
+                <View style={[styles.body, { alignItems: 'center', paddingVertical: 36 }]}>
+                  <View style={[styles.successIcon, { borderColor: '#F59E0B' }]}>
+                    <Ionicons name="warning" size={36} color="#F59E0B" />
+                  </View>
+                  <Text style={styles.doneTitle}>Action Required</Text>
+                  <Text style={styles.doneDesc}>
+                    {uploadedCount} of {totalDocs} documents were uploaded. A reminder email has been sent to you.
+                    Please contact your counsellor for a new upload link.
+                  </Text>
+                  {submissionResult?.missing_docs?.length > 0 && (
+                    <View style={[styles.doneBadge, { flexDirection: 'column', alignItems: 'flex-start', gap: 4, paddingVertical: 14 }]}>
+                      <Text style={[styles.doneBadgeTxt, { color: '#DC2626', marginBottom: 4 }]}>Missing Documents:</Text>
+                      {submissionResult.missing_docs.map((doc, i) => (
+                        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Ionicons name="close-circle" size={13} color="#DC2626" />
+                          <Text style={[styles.doneBadgeTxt, { color: '#DC2626', fontWeight: '500' }]}>{doc}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 24 }} />
+                </View>
+              </>
+            )}
           </View>
         )}
 
@@ -315,4 +428,20 @@ const createStyles = (COLORS) => StyleSheet.create({
   doneDesc:      { fontSize: 14, color: COLORS.muted, textAlign: 'center', lineHeight: 22, marginBottom: 14 },
   doneBadge:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 10 },
   doneBadgeTxt:  { color: COLORS.text, fontWeight: '700', fontSize: 13 },
+  // ── Partial Warning Modal ──
+  modalOverlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalCard:         { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 420, shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.25, shadowRadius: 30, elevation: 20 },
+  modalIconRow:      { alignItems: 'center', marginBottom: 12 },
+  modalTitle:        { fontSize: 18, fontWeight: '800', color: '#0A2463', textAlign: 'center', marginBottom: 8 },
+  modalSubtitle:     { fontSize: 13.5, color: '#475569', textAlign: 'center', lineHeight: 20, marginBottom: 16 },
+  modalMissingList:  { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 12, padding: 14, marginBottom: 14 },
+  modalMissingRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 5 },
+  modalMissingItem:  { fontSize: 13, color: '#DC2626', flex: 1, lineHeight: 18 },
+  modalWarningNote:  { fontSize: 12, color: '#64748B', textAlign: 'center', lineHeight: 18, marginBottom: 20, fontStyle: 'italic' },
+  modalBtnRow:       { gap: 10 },
+  modalBtn:          { borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, alignItems: 'center' },
+  modalBtnCancel:    { backgroundColor: '#0A2463' },
+  modalBtnCancelTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  modalBtnConfirm:   { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' },
+  modalBtnConfirmTxt:{ color: '#DC2626', fontWeight: '700', fontSize: 13 },
 });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Modal, FlatList, ActivityIndicator, TextInput,
+  Modal, FlatList, ActivityIndicator, TextInput, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +29,7 @@ export default function CounsellorPortalScreen({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState(null);
+  const [successAnim] = useState(new Animated.Value(0));
 
   useEffect(() => { loadToken(); }, []);
 
@@ -61,6 +62,12 @@ export default function CounsellorPortalScreen({ navigation, route }) {
     try {
       await selectProgram(token, selected);
       setPhase(PHASE.DONE);
+      Animated.spring(successAnim, {
+        toValue: 1,
+        tension: 60,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
     } catch (e) {
       setAlert({ type: 'error', msg: e.response?.data?.message || e.message });
     } finally { setLoading(false); }
@@ -114,6 +121,40 @@ export default function CounsellorPortalScreen({ navigation, route }) {
                 icon={<Ionicons name="arrow-forward" size={16} color="#fff" />} />
             </View>
           </View>
+        )}
+
+        {phase === PHASE.DONE && (
+          <Animated.View style={[styles.card, { 
+            alignItems: 'center', 
+            padding: 40,
+            opacity: successAnim,
+            transform: [{
+              translateY: successAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [40, 0]
+              })
+            }, {
+              scale: successAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.95, 1]
+              })
+            }]
+          }]}>
+            <View style={styles.successIconWrapper}>
+              <View style={styles.successIconBg} />
+              <Ionicons name="checkmark" size={50} color="#fff" />
+            </View>
+            <Text style={styles.doneTitle}>Link Sent Successfully!</Text>
+            <Text style={styles.doneDesc}>
+              The student has been assigned to the <Text style={styles.bold}>{selected}</Text> programme. 
+              An email with the secure upload link has been sent to <Text style={styles.bold}>{data?.student_email}</Text>.
+            </Text>
+            <Button 
+              title="Return to Home" 
+              onPress={() => navigation.navigate('Home')} 
+              style={{ marginTop: 30, width: '100%', backgroundColor: COLORS.navy }} 
+            />
+          </Animated.View>
         )}
 
       </ScrollView>
@@ -184,9 +225,13 @@ const createStyles = (COLORS) => StyleSheet.create({
   pickerPh: { flex: 1, fontSize: 14, color: COLORS.muted },
   resend: { marginTop: 14, padding: 10 },
   resendTxt: { color: COLORS.accent, fontSize: 14, fontWeight: '600' },
-  successIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.bg, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  doneTitle: { fontSize: 20, fontWeight: '800', color: COLORS.navy, marginBottom: 10 },
-  doneDesc: { fontSize: 14, color: COLORS.muted, textAlign: 'center', lineHeight: 22 },
+  
+  // Premium Success Styles
+  successIconWrapper: { width: 90, height: 90, borderRadius: 45, alignItems: 'center', justifyContent: 'center', marginBottom: 24, shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 10 },
+  successIconBg: { ...StyleSheet.absoluteFillObject, backgroundColor: '#10B981', borderRadius: 45 },
+  doneTitle: { fontSize: 22, fontWeight: '800', color: COLORS.navy, marginBottom: 12, textAlign: 'center', letterSpacing: -0.5 },
+  doneDesc: { fontSize: 15, color: COLORS.text, textAlign: 'center', lineHeight: 24, opacity: 0.8 },
+  
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '85%' },
   sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
