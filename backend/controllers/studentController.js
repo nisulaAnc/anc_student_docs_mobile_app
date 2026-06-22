@@ -20,28 +20,52 @@ const getStudentTokenInfo = async (req, res) => {
   if (!studentToken) return res.status(404).json({ success: false, message: 'Token not found.' });
 
   const requiredDocs = getDocumentsForProduct(studentToken.product_code);
+  
+  const path = require('path');
+  let agreementTemplateUrl = null;
+  const templatePath = path.join(__dirname, '../uploads/Agreement_template.pdf');
+  if (fs.existsSync(templatePath)) {
+    agreementTemplateUrl = `${req.protocol}://${req.get('host')}/uploads/Agreement_template.pdf`;
+  }
+
   res.json({
     success: true,
-    data: { ...studentToken.toObject(), required_documents: requiredDocs },
+    data: { 
+      ...studentToken.toObject(), 
+      required_documents: requiredDocs,
+      agreement_template_url: agreementTemplateUrl
+    },
   });
 };
 
 // POST /api/student/submit-documents
 const submitDocuments = async (req, res) => {
   const { token } = req.body;
+
+  // 1. Validate token
   const studentToken = await StudentToken.findOne({ token });
   if (!studentToken || studentToken.status !== 'pending') {
-    return res.status(400).json({ success: false, message: 'Token not valid or has already been used.' });
+    return res.status(400).json({
+      success: false,
+      message: 'Token not valid or has already been used.',
+    });
   }
 
-  const requiredDocs = getDocumentsForProduct(studentToken.product_code);
-  const uploadedDocs = [];
+  // 2. Ensure no duplicate submission already exists in DB
+  const existingSubmission = await Submission.findOne({ token });
+  if (existingSubmission) {
+    return res.status(409).json({
+      success: false,
+      message: 'A submission for this token already exists. No duplicate allowed.',
+    });
+  }
 
+  // 3. Check files were sent
   if (!req.files || Object.keys(req.files).length === 0) {
     return res.status(400).json({ success: false, message: 'No files uploaded.' });
   }
 
-  // Parse doc_labels from body (JSON array)
+  // 4. Parse doc_labels from body (JSON array)
   let docLabels = [];
   try {
     docLabels = JSON.parse(req.body.doc_labels || '[]');
@@ -49,23 +73,30 @@ const submitDocuments = async (req, res) => {
     docLabels = [];
   }
 
-  // Process uploaded files
-  for (const fileKey of Object.keys(req.files)) {
-    const fileArr = Array.isArray(req.files[fileKey]) ? req.files[fileKey] : [req.files[fileKey]];
-    for (const file of fileArr) {
-      const index = parseInt(fileKey.replace('doc_', '')) || 0;
-      const label = docLabels[index] || requiredDocs[index] || fileKey;
+  // 5. Get required documents for this student's product
+  const requiredDocs = getDocumentsForProduct(studentToken.product_code);
+  const totalRequired = requiredDocs.length + 1; // +1 for agreement
+
+  // 6. Process uploaded files
+  const uploadedDocs = [];
+  
+  if (Array.isArray(req.files)) {
+    for (const file of req.files) {
+      if (file.fieldname === 'agreement') continue; // handled separately below
+      
+      const index = parseInt(file.fieldname.replace('doc_', ''), 10);
+      const label = docLabels[index] || requiredDocs[index] || file.fieldname;
 
       uploadedDocs.push({
         label,
-        cloudinary_url: file.path || file.secure_url, // Cloudinary URL
+        cloudinary_url: file.path || file.secure_url,
         file_name: file.filename || file.originalname,
         public_id: file.public_id,
       });
     }
   }
 
-  // Handle agreement file
+  // 7. Handle agreement file
   let agreementCloudinaryUrl = '';
   let agreementPublicId = '';
   if (req.files['agreement']) {
@@ -76,12 +107,15 @@ const submitDocuments = async (req, res) => {
     agreementPublicId = agrFile.public_id;
   }
 
-  // Mark token used
+  // 8. Determine if submission is complete or partial
+  const uploadedDocCount = uploadedDocs.length + (agreementCloudinaryUrl ? 1 : 0);
+  const isComplete = uploadedDocCount >= totalRequired;
+
+  // 9. Mark token used & save submission to MongoDB
   studentToken.status = 'used';
   studentToken.phase = 'docs_submitted';
   await studentToken.save();
 
-  // Save submission to MongoDB
   const submission = await Submission.create({
     token,
     cf_number: studentToken.cf_number,
@@ -94,51 +128,142 @@ const submitDocuments = async (req, res) => {
     documents: uploadedDocs,
     agreement_url: agreementCloudinaryUrl,
     agreement_public_id: agreementPublicId,
+    status: isComplete ? 'complete' : 'partial',
+    total_required_docs: totalRequired,
   });
 
-  // ── Sync to Google Sheet ──
-  try {
-    // Build the 22-element named-doc array (blank where doc was not uploaded)
-    const docRow = new Array(SUBMISSION_DOC_COLUMNS.length).fill('');
-    for (const doc of uploadedDocs) {
-      const colIdx = SUBMISSION_DOC_COLUMNS.findIndex(
-        (col) => col.toLowerCase() === doc.label.toLowerCase()
-      );
-      if (colIdx !== -1) {
-        docRow[colIdx] = doc.cloudinary_url;
+  // 10. Sync to Google Sheet ONLY for complete submissions
+  // This prevents a partial row being written and then a duplicate row
+  // being written later when all docs are submitted.
+  if (isComplete) {
+    try {
+      const docRow = new Array(SUBMISSION_DOC_COLUMNS.length).fill('');
+      for (const doc of uploadedDocs) {
+        const colIdx = SUBMISSION_DOC_COLUMNS.findIndex(
+          (col) => col.toLowerCase() === doc.label.toLowerCase()
+        );
+        if (colIdx !== -1) {
+          docRow[colIdx] = doc.cloudinary_url;
+        }
       }
-    }
 
-    const sheetRow = [
-      new Date().toISOString(),
-      token,
-      studentToken.cf_number,
-      studentToken.student_name,
-      studentToken.student_email,
-      studentToken.program,
-      studentToken.degree_description || '',
-      studentToken.product_code,
-      ...docRow,
-      agreementCloudinaryUrl,
-    ];
-    await sheetAppend(SHEETS.SUBMISSIONS, sheetRow);
-    submission.synced_to_sheet = true;
-    await submission.save();
-  } catch (err) {
-    console.error('Sheet sync error (Submission):', err.message);
+      const sheetRow = [
+        new Date().toISOString(),
+        token,
+        studentToken.cf_number,
+        studentToken.student_name,
+        studentToken.student_email,
+        studentToken.program,
+        studentToken.degree_description || '',
+        studentToken.product_code,
+        ...docRow,
+        agreementCloudinaryUrl,
+      ];
+      await sheetAppend(SHEETS.SUBMISSIONS, sheetRow);
+      submission.synced_to_sheet = true;
+      await submission.save();
+    } catch (err) {
+      console.error('Sheet sync error (Submission):', err.message);
+    }
   }
 
-  // ── EMAIL NOTIFICATIONS ──
+  // 11. EMAIL NOTIFICATIONS
 
+  if (!isComplete) {
+    // INCOMPLETE: Send "missing documents" warning to student
+    const missingDocs = [];
+    const uploadedLabels = uploadedDocs.map((d) => d.label.toLowerCase());
+    for (const docName of requiredDocs) {
+      if (!uploadedLabels.includes(docName.toLowerCase())) {
+        missingDocs.push(docName);
+      }
+    }
+    if (!agreementCloudinaryUrl) missingDocs.push('Agreement (signed)');
+
+    const missingList = missingDocs.map((d) => `<li>${d}</li>`).join('');
+    const uploadedList = uploadedDocs.map((d) => `<li>${d.label}</li>`).join('');
+
+    const incompleteStudentHtml = emailHtml(
+      'Action Required – Missing Documents',
+      `<p style="font-size:15px;color:#334155;line-height:1.7;">
+        Dear <strong>${studentToken.student_name}</strong>,<br><br>
+        Thank you for submitting some of your documents. However, your submission is
+        <strong style="color:#DC2626;">incomplete</strong>. Please upload the remaining
+        documents and re-submit as soon as possible to avoid delays in your registration.
+      </p>
+      ${uploadedList ? `<p style="font-size:14px;font-weight:700;color:#0A2463;margin:16px 0 6px;">Documents Received (${uploadedDocs.length}):</p>
+      <ul style="color:#16A34A;font-size:14px;line-height:2;">${uploadedList}</ul>` : ''}
+      <p style="font-size:14px;font-weight:700;color:#DC2626;margin:16px 0 6px;">
+        Missing Documents (${missingDocs.length}):
+      </p>
+      <ul style="color:#DC2626;font-size:14px;line-height:2;">${missingList}</ul>
+      <p style="font-size:13px;color:#64748B;margin-top:16px;">
+        Please contact your counsellor <strong>${studentToken.counsellor_name}</strong>
+        for a new upload link to submit the remaining documents.
+      </p>`
+    );
+
+    try {
+      await sendEmail(
+        studentToken.student_email,
+        'ANC Student Docs – Incomplete Submission: Action Required',
+        incompleteStudentHtml
+      );
+    } catch (err) {
+      console.error('Incomplete submission email error:', err.message);
+    }
+
+    // Also alert counsellor about incomplete submission
+    try {
+      const counsellors = await getCounsellors();
+      const counsellor = counsellors.find(
+        (c) => c.name.toLowerCase() === studentToken.counsellor_name.toLowerCase()
+      );
+      if (counsellor?.email) {
+        const counsellorAlertHtml = emailHtml(
+          'Incomplete Student Submission – Action Required',
+          `<p style="font-size:15px;color:#334155;line-height:1.7;">
+            Dear <strong>${studentToken.counsellor_name}</strong>,<br><br>
+            Your student <strong>${studentToken.student_name}</strong>
+            (CF: ${studentToken.cf_number}) has submitted only
+            <strong>${uploadedDocs.length} of ${totalRequired}</strong> required documents.
+            The submission is marked <strong style="color:#DC2626;">incomplete</strong>.
+          </p>
+          <p style="font-size:14px;font-weight:700;color:#DC2626;margin:16px 0 6px;">Missing Documents:</p>
+          <ul style="color:#DC2626;font-size:14px;line-height:2;">${missingList}</ul>
+          <p style="font-size:13px;color:#64748B;margin-top:16px;">
+            Please issue the student a new upload link so they can complete their submission.
+          </p>`
+        );
+        await sendEmail(
+          counsellor.email,
+          `ANC Student Docs – INCOMPLETE Submission: ${studentToken.student_name}`,
+          counsellorAlertHtml
+        );
+      }
+    } catch (err) {
+      console.error('Counsellor incomplete alert email error:', err.message);
+    }
+
+    return res.json({
+      success: true,
+      complete: false,
+      message: `Submission saved but incomplete. ${missingDocs.length} document(s) are missing. A reminder email has been sent to the student.`,
+      submission_id: submission._id,
+      missing_docs: missingDocs,
+    });
+  }
+
+  // COMPLETE: Send success emails
   // 1. Confirmation email to student
   const docList = uploadedDocs.map((d) => `<li>${d.label}</li>`).join('');
   const studentHtml = emailHtml(
-    'Documents Received',
+    'Documents Received – Submission Complete',
     `<p style="font-size:15px;color:#334155;line-height:1.7;">
       Dear <strong>${studentToken.student_name}</strong>,<br><br>
       Your documents have been successfully submitted. Our team will review them shortly.
     </p>
-    <ul style="color:#334155;font-size:14px;line-height:2;">${docList}</ul>`
+    <ul style="color:#334155;font-size:14px;line-height:2;">${docList}${agreementCloudinaryUrl ? '<li>Agreement (signed)</li>' : ''}</ul>`
   );
   try {
     await sendEmail(studentToken.student_email, 'ANC Student Docs – Submission Confirmed', studentHtml);
@@ -204,7 +329,12 @@ const submitDocuments = async (req, res) => {
     console.error('Admin notification email error:', err.message);
   }
 
-  res.json({ success: true, message: 'Documents submitted successfully.', submission_id: submission._id });
+  res.json({
+    success: true,
+    complete: true,
+    message: 'Documents submitted successfully.',
+    submission_id: submission._id,
+  });
 };
 
 // GET /api/student/submission?token=xxx
