@@ -12,7 +12,7 @@ import { useTheme } from '../context/ThemeContext';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-export default function UploadBox({ index, label, file, onFile, onRemove }) {
+export default function UploadBox({ index, label, file, onFile, onRemove, allowedFormat = 'pdf' }) {
   const { colors: COLORS } = useTheme();
   const styles = createStyles(COLORS);
 
@@ -70,6 +70,31 @@ export default function UploadBox({ index, label, file, onFile, onRemove }) {
       }
     } catch (err) {
       console.error('Camera error:', err);
+    }
+  };
+
+  // ── open camera for single image (no PDF build) ──
+  const openCameraImage = async () => {
+    if (!(await ensureCameraPermission())) return;
+    try {
+      const r = await ImagePicker.launchCameraAsync({
+        quality: 0.85,
+        allowsEditing: true,
+      });
+      if (!r.canceled && r.assets?.[0]) {
+        const a = r.assets[0];
+        const ext = a.uri.split('.').pop().toLowerCase() || 'jpg';
+        const newFile = { 
+          uri: a.uri, 
+          name: `photo_${index}_${Date.now()}.${ext}`, 
+          mimeType: `image/${ext === 'png' ? 'png' : 'jpeg'}` 
+        };
+        const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
+        onFile(index, [...fileArray, newFile]);
+      }
+    } catch (err) {
+      console.error('Camera error:', err);
+      Alert.alert('Error', 'Failed to open camera.');
     }
   };
 
@@ -142,20 +167,30 @@ export default function UploadBox({ index, label, file, onFile, onRemove }) {
     }
   };
 
-  // ── pick existing PDF ──
+  // ── pick existing PDF or Image ──
   const pickFile = async () => {
     try {
+      const type = allowedFormat === 'image' ? 'image/*' : 'application/pdf';
       const r = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
+        type,
         copyToCacheDirectory: true,
+        multiple: allowedFormat === 'image', // Allow multiple selection for images
       });
-      if (!r.canceled && r.assets?.[0]) {
-        const a = r.assets[0];
-        if (a.fileSize && a.fileSize > 5 * 1024 * 1024) {
-          Alert.alert('File Too Large', 'Maximum file size is 5 MB.');
-          return;
+      if (!r.canceled && r.assets && r.assets.length > 0) {
+        let validAssets = r.assets;
+        if (validAssets.some(a => a.fileSize && a.fileSize > 5 * 1024 * 1024)) {
+          Alert.alert('File Too Large', 'Maximum file size is 5 MB per file.');
+          validAssets = validAssets.filter(a => !a.fileSize || a.fileSize <= 5 * 1024 * 1024);
+          if (validAssets.length === 0) return;
         }
-        onFile(index, { uri: a.uri, name: a.name, mimeType: a.mimeType });
+
+        const newFiles = validAssets.map(a => ({ uri: a.uri, name: a.name, mimeType: a.mimeType }));
+        if (allowedFormat === 'image') {
+          const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
+          onFile(index, [...fileArray, ...newFiles]);
+        } else {
+          onFile(index, newFiles[0]);
+        }
       }
     } catch (err) {
       console.error('Error picking document:', err);
@@ -163,12 +198,8 @@ export default function UploadBox({ index, label, file, onFile, onRemove }) {
   };
 
   // ── open/preview file ──
-  // expo-sharing handles the file:// → content:// URI conversion internally,
-  // which avoids Android's FileUriExposedException. On Android it opens the
-  // system app-chooser so the user can pick any installed PDF viewer.
-  // On iOS it opens the standard share/preview sheet.
-  const previewFile = async () => {
-    if (!file?.uri) {
+  const previewFile = async (fileToPreview) => {
+    if (!fileToPreview?.uri) {
       Alert.alert('Error', 'No file to preview');
       return;
     }
@@ -176,62 +207,82 @@ export default function UploadBox({ index, label, file, onFile, onRemove }) {
     try {
       const available = await Sharing.isAvailableAsync();
       if (!available) {
-        Alert.alert('Preview Unavailable', 'No PDF viewer found on this device.');
+        Alert.alert('Preview Unavailable', 'No viewer found on this device.');
         return;
       }
-      await Sharing.shareAsync(file.uri, {
-        mimeType: 'application/pdf',
-        dialogTitle: 'Open PDF with…',
-        UTI: 'com.adobe.pdf', // iOS hint
+      await Sharing.shareAsync(fileToPreview.uri, {
+        mimeType: fileToPreview.mimeType || (allowedFormat === 'image' ? 'image/jpeg' : 'application/pdf'),
+        dialogTitle: 'Preview File',
       });
     } catch (err) {
       console.error('Error previewing file:', err);
-      Alert.alert('Preview Error', 'Failed to open PDF. Please try again.');
+      Alert.alert('Preview Error', 'Failed to open file. Please try again.');
     } finally {
       setPreviewLoading(false);
     }
   };
 
+  const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
+
   // ── render ──
   return (
-    <View style={[styles.box, file && styles.boxDone]}>
+    <View style={[styles.box, fileArray.length > 0 && styles.boxDone]}>
       <View style={styles.labelRow}>
-        <View style={[styles.badge, file && styles.badgeDone]}>
-          {file
+        <View style={[styles.badge, fileArray.length > 0 && styles.badgeDone]}>
+          {fileArray.length > 0
             ? <Ionicons name="checkmark" size={12} color="#fff" />
             : <Text style={styles.badgeNum}>{index === 'agreement' ? '*' : index + 1}</Text>}
         </View>
         <Text style={styles.label} numberOfLines={3}>{label}</Text>
       </View>
 
-      {file ? (
-        <View style={styles.fileRow}>
-          <Ionicons name="document-attach" size={16} color={COLORS.green} />
-          <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
-          <TouchableOpacity
-            onPress={previewFile}
-            style={{ marginRight: 8 }}
-            disabled={previewLoading}
-          >
-            {previewLoading ? (
-              <ActivityIndicator size="small" color={COLORS.blue} />
-            ) : (
-              <Ionicons name="eye" size={20} color={COLORS.blue} />
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => onRemove(index)}>
-            <Ionicons name="close-circle" size={20} color={COLORS.red} />
-          </TouchableOpacity>
+      {fileArray.length > 0 ? (
+        <View style={{ gap: 8 }}>
+          {fileArray.map((f, fi) => (
+            <View key={fi} style={styles.fileRow}>
+              <Ionicons name="document-attach" size={16} color={COLORS.green} />
+              <Text style={styles.fileName} numberOfLines={1}>{f.name}</Text>
+              <TouchableOpacity
+                onPress={() => previewFile(f)}
+                style={{ marginRight: 8 }}
+                disabled={previewLoading}
+              >
+                {previewLoading ? (
+                  <ActivityIndicator size="small" color={COLORS.blue} />
+                ) : (
+                  <Ionicons name="eye" size={20} color={COLORS.blue} />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => {
+                const newArray = fileArray.filter((_, i) => i !== fi);
+                onRemove(index, newArray.length > 0 ? newArray : null);
+              }}>
+                <Ionicons name="close-circle" size={20} color={COLORS.red} />
+              </TouchableOpacity>
+            </View>
+          ))}
+          {allowedFormat === 'image' && (
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.actionBtn} onPress={openCameraImage}>
+                <Ionicons name="camera" size={16} color={COLORS.navy} />
+                <Text style={styles.actionTxt}>Add Camera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionBtn} onPress={pickFile}>
+                <Ionicons name="image" size={16} color={COLORS.navy} />
+                <Text style={styles.actionTxt}>Add Image</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       ) : (
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={openScanModal}>
+          <TouchableOpacity style={styles.actionBtn} onPress={allowedFormat === 'image' ? openCameraImage : openScanModal}>
             <Ionicons name="camera" size={16} color={COLORS.navy} />
-            <Text style={styles.actionTxt}>Scan</Text>
+            <Text style={styles.actionTxt}>{allowedFormat === 'image' ? 'Camera' : 'Scan'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} onPress={pickFile}>
-            <Ionicons name="document-text" size={16} color={COLORS.navy} />
-            <Text style={styles.actionTxt}>Upload PDF</Text>
+            <Ionicons name={allowedFormat === 'image' ? "image" : "document-text"} size={16} color={COLORS.navy} />
+            <Text style={styles.actionTxt}>{allowedFormat === 'image' ? 'Upload Image' : 'Upload PDF'}</Text>
           </TouchableOpacity>
         </View>
       )}
