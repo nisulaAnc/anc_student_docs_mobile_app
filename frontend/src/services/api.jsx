@@ -50,17 +50,21 @@ export const submitDocuments = (token, files, docLabels, agreementFile = null) =
   formData.append('token', token);
   formData.append('doc_labels', JSON.stringify(docLabels));
 
-  files.forEach((file, index) => {
-    if (!file) return;
-    const ext = (file.uri || '').split('.').pop().toLowerCase() || 'pdf';
-    const mimeType = ext === 'pdf' ? 'application/pdf'
-      : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
-      : ext === 'png' ? 'image/png' : 'application/octet-stream';
+  files.forEach((fileOrFiles, index) => {
+    if (!fileOrFiles) return;
+    const fileArray = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+    
+    fileArray.forEach((file) => {
+      const ext = (file.uri || '').split('.').pop().toLowerCase() || 'pdf';
+      const mimeType = ext === 'pdf' ? 'application/pdf'
+        : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+        : ext === 'png' ? 'image/png' : 'application/octet-stream';
 
-    formData.append(`doc_${index}`, {
-      uri: file.uri,
-      name: file.name || `doc_${index}.${ext}`,
-      type: mimeType,
+      formData.append(`doc_${index}`, {
+        uri: file.uri,
+        name: file.name || `doc_${index}.${ext}`,
+        type: mimeType,
+      });
     });
   });
 
