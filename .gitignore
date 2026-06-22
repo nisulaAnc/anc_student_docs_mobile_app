@@ -1,2 +1,19 @@
+# General
+node_modules/
 .env
+.DS_Store
 credentials.json
+
+# Backend
+#uploads/
+
+# Frontend (Expo/React Native)
+.expo/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
