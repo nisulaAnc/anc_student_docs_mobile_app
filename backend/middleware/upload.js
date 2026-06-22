@@ -1,6 +1,7 @@
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('cloudinary').v2;
+const StudentToken = require('../models/StudentToken');
 
 // Configure Cloudinary
 cloudinary.config({
@@ -13,14 +14,51 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: process.env.CLOUDINARY_FOLDER || 'anc_student_docs',
-    allowed_formats: ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'],
-    public_id: (req, file) => {
-      const safeOriginal = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const unique = `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-      return `${unique}_${safeOriginal.split('.')[0]}`;
+    folder: async (req, file) => {
+      const baseFolder = process.env.CLOUDINARY_FOLDER || 'anc_student_docs';
+      let docName = 'Other';
+      if (file.fieldname === 'agreement') {
+        docName = 'Agreement';
+      } else if (file.fieldname.startsWith('doc_')) {
+        try {
+          const docLabels = JSON.parse(req.body.doc_labels || '[]');
+          const index = parseInt(file.fieldname.replace('doc_', ''), 10);
+          if (docLabels[index]) docName = docLabels[index];
+        } catch(e) {}
+      }
+      const safeDocName = docName.replace(/[^a-zA-Z0-9.\- ]/g, '').trim().replace(/\s+/g, '_');
+      return `${baseFolder}/${safeDocName}`;
     },
-    resource_type: 'raw',
+    allowed_formats: ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'],
+    public_id: async (req, file) => {
+      let cfNumber = 'UnknownCF';
+      if (req.body.token) {
+        if (!req.cachedCfNumber) {
+           const studentToken = await StudentToken.findOne({ token: req.body.token });
+           if (studentToken) req.cachedCfNumber = studentToken.cf_number;
+        }
+        if (req.cachedCfNumber) cfNumber = req.cachedCfNumber;
+      }
+
+      let docName = 'document';
+      if (file.fieldname === 'agreement') {
+        docName = 'Agreement';
+      } else if (file.fieldname.startsWith('doc_')) {
+        try {
+          const docLabels = JSON.parse(req.body.doc_labels || '[]');
+          const index = parseInt(file.fieldname.replace('doc_', ''), 10);
+          if (docLabels[index]) docName = docLabels[index];
+        } catch(e) {}
+      }
+      
+      const safeDocName = docName.replace(/[^a-zA-Z0-9.\- ]/g, '').trim().replace(/\s+/g, '_');
+      const ext = file.originalname.split('.').pop();
+      
+      // Cloudinary will treat this exactly as requested, e.g., CFN-56432_passport_size_photograph
+      // In 'auto' mode, Cloudinary automatically appends the correct extension (.png, .jpg, .pdf)
+      return `${cfNumber}_${safeDocName}`;
+    },
+    resource_type: 'auto',
   },
 });
 
