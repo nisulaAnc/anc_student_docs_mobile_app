@@ -43,8 +43,15 @@ const start = async () => {
   });
 };
 
+// When the file is run directly (local dev), start the server.
 if (require.main === module) {
   start();
+} else {
+  // When required (e.g. by Vercel serverless or tests), ensure DB is connected
+  // but do not call `listen()` since the hosting platform manages the HTTP server.
+  connectDB().catch((err) => {
+    console.error('Error connecting to DB on module load:', err.message);
+  });
 }
 
 module.exports = app;
