@@ -8,9 +8,31 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../context/ThemeContext';
 
 const { width: SCREEN_W } = Dimensions.get('window');
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+// Utility function to format bytes to human-readable size
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+};
+
+// Utility function to check file size
+const checkFileSize = async (uri) => {
+  try {
+    const fileInfo = await FileSystem.getInfoAsync(uri);
+    return fileInfo.size;
+  } catch (err) {
+    console.error('Error getting file size:', err);
+    return null;
+  }
+};
 
 export default function UploadBox({ index, label, file, onFile, onRemove, allowedFormat = 'pdf' }) {
   const { colors: COLORS } = useTheme();
@@ -83,6 +105,17 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       });
       if (!r.canceled && r.assets?.[0]) {
         const a = r.assets[0];
+        
+        // Check file size after capture
+        const fileSize = await checkFileSize(a.uri);
+        if (fileSize && fileSize > MAX_FILE_SIZE) {
+          Alert.alert(
+            'File Too Large',
+            `Image size is ${formatFileSize(fileSize)}. Maximum allowed is ${formatFileSize(MAX_FILE_SIZE)}.`
+          );
+          return;
+        }
+
         const ext = a.uri.split('.').pop().toLowerCase() || 'jpg';
         const newFile = { 
           uri: a.uri, 
@@ -151,6 +184,17 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
 
       const { uri: pdfUri } = await Print.printToFileAsync({ html });
 
+      // Check PDF file size before accepting
+      const pdfFileSize = await checkFileSize(pdfUri);
+      if (pdfFileSize && pdfFileSize > MAX_FILE_SIZE) {
+        Alert.alert(
+          'File Too Large',
+          `Generated PDF is ${formatFileSize(pdfFileSize)}. Maximum allowed is ${formatFileSize(MAX_FILE_SIZE)}. Please scan fewer pages.`
+        );
+        setConverting(false);
+        return;
+      }
+
       const pageCount = scannedPages.length;
       setScanModalVisible(false);
       setScannedPages([]);
@@ -177,12 +221,25 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
         multiple: allowedFormat === 'image', // Allow multiple selection for images
       });
       if (!r.canceled && r.assets && r.assets.length > 0) {
-        let validAssets = r.assets;
-        if (validAssets.some(a => a.fileSize && a.fileSize > 5 * 1024 * 1024)) {
-          Alert.alert('File Too Large', 'Maximum file size is 5 MB per file.');
-          validAssets = validAssets.filter(a => !a.fileSize || a.fileSize <= 5 * 1024 * 1024);
-          if (validAssets.length === 0) return;
+        let validAssets = [];
+        const oversizedFiles = [];
+
+        for (const asset of r.assets) {
+          if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE) {
+            oversizedFiles.push(`${asset.name} (${formatFileSize(asset.fileSize)})`);
+          } else {
+            validAssets.push(asset);
+          }
         }
+
+        if (oversizedFiles.length > 0) {
+          const msg = oversizedFiles.length === 1
+            ? `${oversizedFiles[0]} exceeds the 5 MB limit.`
+            : `${oversizedFiles.length} files exceed the 5 MB limit:\n\n${oversizedFiles.join('\n')}`;
+          Alert.alert('File Too Large', msg);
+        }
+
+        if (validAssets.length === 0) return;
 
         const newFiles = validAssets.map(a => ({ uri: a.uri, name: a.name, mimeType: a.mimeType }));
         if (allowedFormat === 'image') {

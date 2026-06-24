@@ -1,9 +1,11 @@
 import { Platform } from 'react-native';
 
-const LOCAL_IP = '192.168.16.148'; // <-- CHANGE THIS TO YOUR MACHINE IP
-const PORT = 5000;
+//const LOCAL_IP = '192.168.9.73'; // <-- CHANGE THIS TO YOUR MACHINE IP
+//const PORT = 5000;
 
-export const API_BASE_URL = `http://${LOCAL_IP}:${PORT}/api`;
+//export const API_BASE_URL = `http://${LOCAL_IP}:${PORT}/api`;
+
+export const API_BASE_URL = 'https://anc-student-docs-mobile-app.vercel.app/api';
 
 export const LIGHT_COLORS = {
   navy: '#0A2463',

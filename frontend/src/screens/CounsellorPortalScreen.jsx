@@ -75,9 +75,9 @@ export default function CounsellorPortalScreen({ navigation, route }) {
 
   const InfoGrid = () => (
     <View style={styles.infoGrid}>
-      <InfoItem label="CF Number" value={data?.cf_number} COLORS={COLORS} />
-      <InfoItem label="Student" value={data?.student_name} COLORS={COLORS} />
-      <InfoItem label="Email" value={data?.student_email} full COLORS={COLORS} />
+      <InfoItem label="CF Number" value={data?.cf_number} COLORS={COLORS} full />
+      <InfoItem label="Student Name" value={data?.student_name} COLORS={COLORS} full />
+      <InfoItem label="Student Email" value={data?.student_email} COLORS={COLORS} full />
     </View>
   );
 
@@ -200,8 +200,9 @@ export default function CounsellorPortalScreen({ navigation, route }) {
 function InfoItem({ label, value, full, COLORS }) {
   return (
     <View style={[
-      { backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12, flex: 1 },
+      { backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12 },
       full && { width: '100%' },
+      { marginBottom: 12 },
     ]}>
       <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', color: COLORS.muted, marginBottom: 3 }}>{label}</Text>
       <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.navy }} numberOfLines={2}>{value || '—'}</Text>
@@ -216,7 +217,7 @@ const createStyles = (COLORS) => StyleSheet.create({
   loadTxt: { color: COLORS.muted, marginTop: 12, fontSize: 15 },
   card: { backgroundColor: COLORS.white, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, shadowColor: COLORS.navy, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.10, shadowRadius: 20, elevation: 4 },
   body: { padding: 24 },
-  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  infoGrid: { flexDirection: 'column', marginBottom: 20 },
   secLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase', color: COLORS.muted, marginBottom: 10 },
   desc: { fontSize: 14, color: COLORS.text, lineHeight: 20 },
   bold: { fontWeight: '700', color: COLORS.navy },

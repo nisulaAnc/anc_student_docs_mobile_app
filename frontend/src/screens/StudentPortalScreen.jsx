@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Modal, Platform,
+  Modal, Platform, Linking, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -248,10 +248,20 @@ export default function StudentPortalScreen({ navigation, route }) {
                 {data?.agreement_template_url ? (
                   <TouchableOpacity 
                     style={styles.downloadBtn}
-                    onPress={() => {
-                      import('react-native').then(({ Linking }) => {
-                        Linking.openURL(data.agreement_template_url);
-                      });
+                    onPress={async () => {
+                      try {
+                        const supported = await Linking.canOpenURL(data.agreement_template_url);
+                        if (supported) {
+                          await Linking.openURL(data.agreement_template_url);
+                        } else {
+                          Alert.alert(
+                            'Cannot Open PDF',
+                            'This device cannot open PDF links directly. Please try using a browser or install a PDF viewer.'
+                          );
+                        }
+                      } catch (err) {
+                        Alert.alert('Download Failed', 'Unable to open the agreement PDF. Please try again later.');
+                      }
                     }}
                   >
                     <Ionicons name="download-outline" size={16} color={COLORS.blue} />
