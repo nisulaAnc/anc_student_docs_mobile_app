@@ -35,6 +35,10 @@ export const verifyCfPin = (pin) => api.post('/cf/verify-pin', { pin });
 export const getCounsellorTokenInfo = (token) =>
   api.get('/cf/counsellor/token-info', { params: { token } });
 
+export const getCfDashboardStats = () => api.get('/cf/dashboard-stats');
+
+export const sendPendingReminder = (token) => api.post('/cf/send-reminder', { token });
+
 // ── Counsellor Portal ────────────────────────────────────────────────
 export const getPrograms = () => api.get('/counsellor/programs');
 
