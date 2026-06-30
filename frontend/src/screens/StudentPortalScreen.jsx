@@ -68,37 +68,29 @@ export default function StudentPortalScreen({ navigation, route }) {
     return missing;
   };
 
-  const handleSubmit = async () => {
-    if (uploadedCount === 0) { setAlert({ type: 'error', msg: 'Please upload at least one document.' }); return; }
-    
-    // If not all documents are uploaded, block submission and show modal
-    const missingDocs = getMissingDocs();
-    if (missingDocs.length > 0) {
-      setShowPartialWarning(true);
-      return;
-    }
-    
-    // Proceed with submission
+  const submitUploads = async () => {
     setShowPartialWarning(false);
-    setLoading(true); setAlert(null);
+    setLoading(true);
+    setAlert(null);
+
     try {
       const fileArr = [];
       const labels = [];
-      
+
       Object.keys(files).sort((a, b) => Number(a) - Number(b)).forEach((k) => {
         const fileOrFiles = files[k];
         const label = requiredDocs[k] || `Document ${Number(k) + 1}`;
         const cleanLabel = label.replace(/[^a-zA-Z0-9_-]/g, '_');
-        
+
         const fArray = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
         const processedArray = fArray.map((file, i) => {
           const ext = file.name.split('.').pop();
-          const customName = fArray.length > 1 
-            ? `${data.cf_number}_${cleanLabel}_${i + 1}.${ext}` 
+          const customName = fArray.length > 1
+            ? `${data.cf_number}_${cleanLabel}_${i + 1}.${ext}`
             : `${data.cf_number}_${cleanLabel}.${ext}`;
           return { ...file, name: customName };
         });
-        
+
         fileArr.push(fArray.length > 1 ? processedArray : processedArray[0]);
         labels.push(label);
       });
@@ -108,13 +100,34 @@ export default function StudentPortalScreen({ navigation, route }) {
         const ext = agreementFile.name.split('.').pop();
         finalAgreement = { ...agreementFile, name: `${data.cf_number}_Agreement.${ext}` };
       }
-      
+
       const res = await submitDocuments(token, fileArr, labels, finalAgreement);
       setSubmissionResult(res.data);
       setPhase(PHASE.DONE);
     } catch (e) {
       setAlert({ type: 'error', msg: e.response?.data?.message || e.message });
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (uploadedCount === 0) {
+      setAlert({ type: 'error', msg: 'Please upload at least one document.' });
+      return;
+    }
+
+    const missingDocs = getMissingDocs();
+    if (missingDocs.length > 0) {
+      setShowPartialWarning(true);
+      return;
+    }
+
+    await submitUploads();
+  };
+
+  const handleSubmitAnyway = async () => {
+    await submitUploads();
   };
 
   return (
@@ -135,7 +148,7 @@ export default function StudentPortalScreen({ navigation, route }) {
             </View>
             <Text style={styles.modalTitle}>Incomplete Submission</Text>
             <Text style={styles.modalSubtitle}>
-              You must upload ALL required documents before submitting. The following are still missing:
+              You can still submit what you have uploaded. Missing items will be flagged for follow-up.
             </Text>
             <View style={styles.modalMissingList}>
               {getMissingDocs().map((doc, i) => (
@@ -153,7 +166,13 @@ export default function StudentPortalScreen({ navigation, route }) {
                 style={[styles.modalBtn, styles.modalBtnCancel, { flex: 1 }]}
                 onPress={() => setShowPartialWarning(false)}
               >
-                <Text style={styles.modalBtnCancelTxt}>Go Back & Upload Missing Docs</Text>
+                <Text style={styles.modalBtnCancelTxt}>Go Back & Upload</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnConfirm, { flex: 1 }]}
+                onPress={handleSubmitAnyway}
+              >
+                <Text style={styles.modalBtnConfirmTxt}>Submit Anyway</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -448,10 +467,10 @@ const createStyles = (COLORS) => StyleSheet.create({
   modalMissingRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 5 },
   modalMissingItem:  { fontSize: 13, color: '#DC2626', flex: 1, lineHeight: 18 },
   modalWarningNote:  { fontSize: 12, color: '#64748B', textAlign: 'center', lineHeight: 18, marginBottom: 20, fontStyle: 'italic' },
-  modalBtnRow:       { gap: 10 },
-  modalBtn:          { borderRadius: 12, paddingVertical: 14, paddingHorizontal: 20, alignItems: 'center' },
+  modalBtnRow:       { flexDirection: 'row', gap: 10, marginTop: 4 },
+  modalBtn:          { borderRadius: 12, paddingVertical: 14, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
   modalBtnCancel:    { backgroundColor: '#0A2463' },
-  modalBtnCancelTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  modalBtnCancelTxt: { color: '#fff', fontWeight: '700', fontSize: 14, textAlign: 'center' },
   modalBtnConfirm:   { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' },
-  modalBtnConfirmTxt:{ color: '#DC2626', fontWeight: '700', fontSize: 13 },
+  modalBtnConfirmTxt:{ color: '#DC2626', fontWeight: '700', fontSize: 13, textAlign: 'center' },
 });

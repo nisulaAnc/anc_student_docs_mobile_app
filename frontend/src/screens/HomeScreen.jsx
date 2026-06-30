@@ -14,7 +14,7 @@ export default function HomeScreen({ navigation }) {
   const { theme, toggleTheme, colors: COLORS } = useTheme();
   const styles = createStyles(COLORS);
 
-  // ── PIN modal state ──
+  const [destScreen, setDestScreen] = useState('CFRegistration');
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
@@ -29,6 +29,15 @@ export default function HomeScreen({ navigation }) {
       color: COLORS.navy,
       label: 'CF Registration',
       desc: 'Register a new student and notify their counsellor',
+      protected: true,
+    },
+    {
+      screen: 'CFDashboard',
+      params: {},
+      icon: 'analytics',
+      color: '#8B5CF6',
+      label: 'CF Portal Dashboard',
+      desc: 'View statistics, check document status & send reminders',
       protected: true,
     },
     {
@@ -55,6 +64,7 @@ export default function HomeScreen({ navigation }) {
     if (role.protected) {
       setPin('');
       setPinError('');
+      setDestScreen(role.screen);
       setPinModalVisible(true);
       setTimeout(() => pinInputRef.current?.focus(), 300);
     } else {
@@ -73,7 +83,7 @@ export default function HomeScreen({ navigation }) {
       await verifyCfPin(pin);
       setPinModalVisible(false);
       setPin('');
-      navigation.navigate('CFRegistration', {});
+      navigation.navigate(destScreen, {});
     } catch (e) {
       setPinError(e.response?.data?.message || 'Incorrect PIN. Access denied.');
       setPin('');
