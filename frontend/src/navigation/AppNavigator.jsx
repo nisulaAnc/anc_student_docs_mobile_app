@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 
 import HomeScreen from '../screens/HomeScreen';
 import CFRegistrationScreen from '../screens/CFRegistrationScreen';
+import CFDashboardScreen from '../screens/CFDashboardScreen';
 import CounsellorPortalScreen from '../screens/CounsellorPortalScreen';
 import StudentPortalScreen from '../screens/StudentPortalScreen';
 import QRScanScreen from '../screens/QRScanScreen';
@@ -18,6 +19,7 @@ export default function AppNavigator() {
         <Stack.Screen name="Launch" component={LaunchScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="CFRegistration" component={CFRegistrationScreen} />
+        <Stack.Screen name="CFDashboard" component={CFDashboardScreen} />
         <Stack.Screen name="CounsellorPortal" component={CounsellorPortalScreen} />
         <Stack.Screen name="StudentPortal" component={StudentPortalScreen} />
         <Stack.Screen name="QRScan" component={QRScanScreen} />
