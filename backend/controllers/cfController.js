@@ -1,6 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
 const CfToken = require('../models/CfToken');
+const StudentToken = require('../models/StudentToken');
+const Submission = require('../models/Submission');
 const { getCounsellors, sheetAppend, SHEETS } = require('../config/googleSheets');
+const { getDocumentsForProduct } = require('../utils/productDocuments');
 const { sendEmail, emailHtml } = require('../utils/email');
 
 // GET /api/cf/counsellors
@@ -105,4 +108,160 @@ const verifyCfPin = (req, res) => {
   return res.json({ success: true, message: 'PIN verified.' });
 };
 
-module.exports = { getCounsellorList, registerCF, getCounsellorTokenInfo, verifyCfPin };
+// GET /api/cf/dashboard-stats
+const getDashboardStats = async (req, res) => {
+  try {
+    // 1. Total student tokens registered
+    const totalStudents = await StudentToken.countDocuments();
+
+    // 2. Submissions
+    const submissions = await Submission.find();
+    const totalUploadedDocuments = submissions.reduce((acc, sub) => acc + (sub.documents?.length || 0) + (sub.agreement_url ? 1 : 0), 0);
+
+    // 3. Count completed (status = 'complete') vs pending/missing (status = 'partial' or no submission yet)
+    // Map existing submissions by token
+    const submissionMap = {};
+    submissions.forEach(sub => {
+      submissionMap[sub.token] = sub;
+    });
+
+    const studentTokens = await StudentToken.find();
+    let completedCount = 0;
+    let pendingCount = 0;
+    const studentStatuses = [];
+
+    for (const token of studentTokens) {
+      const sub = submissionMap[token.token];
+      const requiredDocs = getDocumentsForProduct(token.product_code);
+      const totalRequired = requiredDocs.length + 1; // +1 for agreement
+
+      let uploadedDocs = [];
+      let missingDocs = [...requiredDocs];
+      let hasAgreement = false;
+      let isComplete = false;
+
+      if (sub) {
+        isComplete = sub.status === 'complete';
+        if (sub.documents) {
+          uploadedDocs = sub.documents.map(d => d.label);
+          missingDocs = requiredDocs.filter(d => !uploadedDocs.some(u => u.toLowerCase() === d.toLowerCase()));
+        }
+        hasAgreement = !!sub.agreement_url;
+        if (!hasAgreement) {
+          missingDocs.push('Agreement (signed)');
+        }
+      } else {
+        missingDocs.push('Agreement (signed)');
+      }
+
+      if (isComplete) {
+        completedCount++;
+      } else {
+        pendingCount++;
+      }
+
+      studentStatuses.push({
+        token: token.token,
+        cf_number: token.cf_number,
+        student_name: token.student_name,
+        student_email: token.student_email,
+        counsellor_name: token.counsellor_name,
+        program: token.program,
+        status: isComplete ? 'complete' : 'pending',
+        uploaded_documents: uploadedDocs,
+        missing_documents: missingDocs,
+        uploaded_count: sub ? (sub.documents?.length || 0) + (hasAgreement ? 1 : 0) : 0,
+        required_count: totalRequired
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        total_students: totalStudents,
+        total_uploaded_documents: totalUploadedDocuments,
+        completed_students: completedCount,
+        pending_students: pendingCount,
+        student_list: studentStatuses
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/cf/send-reminder
+// Body: { token }
+const sendReminderEmail = async (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ success: false, message: 'Student token is required.' });
+  }
+
+  try {
+    const studentToken = await StudentToken.findOne({ token });
+    if (!studentToken) {
+      return res.status(404).json({ success: false, message: 'Student token not found.' });
+    }
+
+    const sub = await Submission.findOne({ token });
+    const requiredDocs = getDocumentsForProduct(studentToken.product_code);
+    let missingDocs = [...requiredDocs];
+    let uploadedDocs = [];
+
+    if (sub) {
+      if (sub.documents) {
+        uploadedDocs = sub.documents.map(d => d.label);
+        missingDocs = requiredDocs.filter(d => !uploadedDocs.some(u => u.toLowerCase() === d.toLowerCase()));
+      }
+      if (!sub.agreement_url) {
+        missingDocs.push('Agreement (signed)');
+      }
+    } else {
+      missingDocs.push('Agreement (signed)');
+    }
+
+    if (missingDocs.length === 0) {
+      return res.status(400).json({ success: false, message: 'Student has already submitted all required documents.' });
+    }
+
+    const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
+    const studentUrl = `${BASE_URL}/student?token=${token}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(studentUrl)}`;
+
+    const missingList = missingDocs.map((d) => `<li>${d}</li>`).join('');
+    const uploadedList = uploadedDocs.map((d) => `<li>${d}</li>`).join('');
+
+    const html = emailHtml(
+      'Action Required – Pending Documents Reminder',
+      `<p style="font-size:15px;color:#334155;line-height:1.7;">
+        Dear <strong>${studentToken.student_name}</strong>,<br><br>
+        This is a friendly reminder to submit your pending documents for your registration in <strong>${studentToken.program}</strong>.<br><br>
+        Your registration is currently <strong style="color:#DC2626;">incomplete</strong>. Please use the secure link below to upload the missing documents.
+      </p>
+      ${uploadedList ? `<p style="font-size:14px;font-weight:700;color:#16A34A;margin:16px 0 6px;">Documents Received:</p>
+      <ul style="color:#16A34A;font-size:14px;line-height:2;">${uploadedList}</ul>` : ''}
+      <p style="font-size:14px;font-weight:700;color:#DC2626;margin:16px 0 6px;">
+        Missing Documents (${missingDocs.length}):
+      </p>
+      <ul style="color:#DC2626;font-size:14px;line-height:2;">${missingList}</ul>
+      <div style="text-align:center;margin:24px 0;">
+        <img src="${qrUrl}" alt="QR Code" width="180" height="180" style="border:4px solid #fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.1);" />
+        <div style="margin-top:16px;font-size:13px;color:#64748B;">
+          Or enter this token manually inside the app:<br>
+          <strong style="font-family:monospace;font-size:16px;color:#0A2463;letter-spacing:2px;display:inline-block;margin-top:6px;padding:8px 16px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">${token}</strong>
+        </div>
+      </div>`,
+      'Upload Missing Documents →',
+      studentUrl
+    );
+
+    await sendEmail(studentToken.student_email, 'ANC Student Docs – Reminder: Pending Documents', html);
+
+    res.json({ success: true, message: `Reminder email successfully sent to ${studentToken.student_email}.` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { getCounsellorList, registerCF, getCounsellorTokenInfo, verifyCfPin, getDashboardStats, sendReminderEmail };
