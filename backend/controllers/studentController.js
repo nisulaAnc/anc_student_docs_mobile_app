@@ -44,19 +44,22 @@ const submitDocuments = async (req, res) => {
 
   // 1. Validate token
   const studentToken = await StudentToken.findOne({ token });
-  if (!studentToken || studentToken.status !== 'pending') {
+  if (!studentToken) {
     return res.status(400).json({
       success: false,
-      message: 'Token not valid or has already been used.',
+      message: 'Token not valid.',
     });
   }
 
-  // 2. Ensure no duplicate submission already exists in DB
+  // 2. Allow partial follow-up submissions for the same student token,
+  //    but block a different token from creating a duplicate submission for the same CF number.
   const existingSubmission = await Submission.findOne({ token });
-  if (existingSubmission) {
+  const existingCfSubmission = await Submission.findOne({ cf_number: studentToken.cf_number });
+
+  if (existingCfSubmission && (!existingSubmission || existingCfSubmission._id.toString() !== existingSubmission._id.toString())) {
     return res.status(409).json({
       success: false,
-      message: 'A submission for this token already exists. No duplicate allowed.',
+      message: 'A submission for this CF number already exists. Please contact your counsellor for support.',
     });
   }
 
@@ -113,21 +116,46 @@ const submitDocuments = async (req, res) => {
   studentToken.phase = 'docs_submitted';
   await studentToken.save();
 
-  const submission = await Submission.create({
-    token,
-    cf_number: studentToken.cf_number,
-    student_name: studentToken.student_name,
-    student_email: studentToken.student_email,
-    counsellor_name: studentToken.counsellor_name,
-    program_level: studentToken.program,
-    degree_description: studentToken.degree_description,
-    product_code: studentToken.product_code,
-    documents: uploadedDocs,
-    agreement_url: agreementCloudinaryUrl,
-    agreement_public_id: agreementPublicId,
-    status: isComplete ? 'complete' : 'partial',
-    total_required_docs: totalRequired,
+  const mergedDocuments = (existingSubmission?.documents || []).reduce((acc, doc) => {
+    acc[doc.label?.toLowerCase()] = doc;
+    return acc;
+  }, {});
+
+  uploadedDocs.forEach((doc) => {
+    const key = doc.label?.toLowerCase();
+    if (key) {
+      mergedDocuments[key] = doc;
+    }
   });
+
+  const finalDocuments = Object.values(mergedDocuments);
+
+  let submission = existingSubmission;
+  if (!submission) {
+    submission = await Submission.create({
+      token,
+      cf_number: studentToken.cf_number,
+      student_name: studentToken.student_name,
+      student_email: studentToken.student_email,
+      counsellor_name: studentToken.counsellor_name,
+      program_level: studentToken.program,
+      degree_description: studentToken.degree_description,
+      product_code: studentToken.product_code,
+      documents: finalDocuments,
+      agreement_url: agreementCloudinaryUrl,
+      agreement_public_id: agreementPublicId,
+      status: isComplete ? 'complete' : 'partial',
+      total_required_docs: totalRequired,
+    });
+  } else {
+    submission.documents = finalDocuments;
+    submission.agreement_url = agreementCloudinaryUrl || submission.agreement_url;
+    submission.agreement_public_id = agreementPublicId || submission.agreement_public_id;
+    submission.status = isComplete ? 'complete' : 'partial';
+    submission.total_required_docs = totalRequired;
+    submission.submitted_at = new Date();
+    await submission.save();
+  }
 
   // 10. Sync to Google Sheet ONLY for complete submissions
   // This prevents a partial row being written and then a duplicate row
