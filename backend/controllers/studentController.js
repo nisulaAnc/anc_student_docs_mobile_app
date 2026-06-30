@@ -61,7 +61,8 @@ const submitDocuments = async (req, res) => {
   }
 
   // 3. Check files were sent
-  if (!req.files || Object.keys(req.files).length === 0) {
+  const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+  if (uploadedFiles.length === 0) {
     return res.status(400).json({ success: false, message: 'No files uploaded.' });
   }
 
@@ -79,32 +80,28 @@ const submitDocuments = async (req, res) => {
 
   // 6. Process uploaded files
   const uploadedDocs = [];
-  
-  if (Array.isArray(req.files)) {
-    for (const file of req.files) {
-      if (file.fieldname === 'agreement') continue; // handled separately below
-      
-      const index = parseInt(file.fieldname.replace('doc_', ''), 10);
-      const label = docLabels[index] || requiredDocs[index] || file.fieldname;
 
-      uploadedDocs.push({
-        label,
-        cloudinary_url: file.path || file.secure_url,
-        file_name: file.filename || file.originalname,
-        public_id: file.public_id,
-      });
-    }
+  for (const file of uploadedFiles) {
+    if (file.fieldname === 'agreement') continue; // handled separately below
+
+    const index = parseInt(file.fieldname.replace('doc_', ''), 10);
+    const label = docLabels[index] || requiredDocs[index] || file.fieldname;
+
+    uploadedDocs.push({
+      label,
+      cloudinary_url: file.path || file.secure_url,
+      file_name: file.filename || file.originalname,
+      public_id: file.public_id,
+    });
   }
 
   // 7. Handle agreement file
   let agreementCloudinaryUrl = '';
   let agreementPublicId = '';
-  if (req.files['agreement']) {
-    const agrFile = Array.isArray(req.files['agreement'])
-      ? req.files['agreement'][0]
-      : req.files['agreement'];
-    agreementCloudinaryUrl = agrFile.path || agrFile.secure_url;
-    agreementPublicId = agrFile.public_id;
+  const agreementFile = uploadedFiles.find((file) => file.fieldname === 'agreement');
+  if (agreementFile) {
+    agreementCloudinaryUrl = agreementFile.path || agreementFile.secure_url;
+    agreementPublicId = agreementFile.public_id;
   }
 
   // 8. Determine if submission is complete or partial
