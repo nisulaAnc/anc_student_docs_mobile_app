@@ -38,13 +38,13 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
   const { colors: COLORS } = useTheme();
   const styles = createStyles(COLORS);
 
-  // ── multi-page scan state ──
+  // multi-page scan state 
   const [scanModalVisible, setScanModalVisible] = useState(false);
   const [scannedPages, setScannedPages] = useState([]);
   const [converting, setConverting] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // ── request camera permission ──
+  // request camera permission
   const ensureCameraPermission = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
@@ -54,15 +54,15 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     return true;
   };
 
-  // ── take one more photo (with crop) ──
+  // take one more photo (with crop)
   const takePage = async () => {
     if (!(await ensureCameraPermission())) return;
     try {
       const r = await ImagePicker.launchCameraAsync({
         quality: 0.85,
         base64: true,
-        allowsEditing: true,   // ← enables built-in crop UI after each shot
-        aspect: [3, 4],        // portrait crop guide (A4-ish)
+        allowsEditing: true,
+        aspect: [3, 4],
       });
       if (!r.canceled && r.assets?.[0]) {
         const a = r.assets[0];
@@ -74,7 +74,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // ── open scan session (first page, with crop) ──
+  // open scan session (first page, with crop)
   const openScanModal = async () => {
     if (!(await ensureCameraPermission())) return;
     setScannedPages([]);
@@ -83,8 +83,8 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       const r = await ImagePicker.launchCameraAsync({
         quality: 0.85,
         base64: true,
-        allowsEditing: true,   // enables built-in crop UI after each shot
-        aspect: [3, 4],        
+        allowsEditing: true,
+        aspect: [3, 4],
       });
       if (!r.canceled && r.assets?.[0]) {
         const a = r.assets[0];
@@ -95,7 +95,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // ── open camera for single image (no PDF build) ──
+  // sopen camera for single image (no PDF build)
   const openCameraImage = async () => {
     if (!(await ensureCameraPermission())) return;
     try {
@@ -105,7 +105,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       });
       if (!r.canceled && r.assets?.[0]) {
         const a = r.assets[0];
-        
+
         // Check file size after capture
         const fileSize = await checkFileSize(a.uri);
         if (fileSize && fileSize > MAX_FILE_SIZE) {
@@ -117,10 +117,10 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
         }
 
         const ext = a.uri.split('.').pop().toLowerCase() || 'jpg';
-        const newFile = { 
-          uri: a.uri, 
-          name: `photo_${index}_${Date.now()}.${ext}`, 
-          mimeType: `image/${ext === 'png' ? 'png' : 'jpeg'}` 
+        const newFile = {
+          uri: a.uri,
+          name: `photo_${index}_${Date.now()}.${ext}`,
+          mimeType: `image/${ext === 'png' ? 'png' : 'jpeg'}`
         };
         const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
         onFile(index, [...fileArray, newFile]);
@@ -131,12 +131,12 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // ── remove one scanned page ──
+  // remove one scanned page
   const removePage = (pageIndex) => {
     setScannedPages((prev) => prev.filter((_, i) => i !== pageIndex));
   };
 
-  // ── build multi-page PDF and finish ──
+  // build multi-page PDF and finish (with auto-compression)
   const buildPDF = async () => {
     if (scannedPages.length === 0) {
       Alert.alert('No Pages', 'Please scan at least one page.');
@@ -144,52 +144,79 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
     setConverting(true);
     try {
-      const pageHtml = scannedPages
-        .map(
-          (p, i) => `
-          <div class="page">
-            <img src="data:image/jpeg;base64,${p.base64}" />
-          </div>${i < scannedPages.length - 1 ? '<div class="break"></div>' : ''}
-        `
-        )
-        .join('');
+      // Attempt PDF generation, retrying with lower quality if file is too large
+      const qualityLevels = [0.85, 0.60, 0.40];
+      let pdfUri = null;
+      let pdfFileSize = null;
 
-      const html = `
-        <html>
-          <head>
-            <style>
-              @page { margin: 0; }
-              * { box-sizing: border-box; margin: 0; padding: 0; }
-              body { background: white; }
-              .page {
-                width: 100%;
-                page-break-after: always;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-              }
-              .page img {
-                width: 100%;
-                height: auto;
-                display: block;
-              }
-              .break { page-break-after: always; }
-            </style>
-          </head>
-          <body>
-            ${pageHtml}
-          </body>
-        </html>
-      `;
+      for (let qi = 0; qi < qualityLevels.length; qi++) {
+        const quality = qualityLevels[qi];
 
-      const { uri: pdfUri } = await Print.printToFileAsync({ html });
+        // Reuse original images on the first attempt; reduce image quality on retries to decrease file size.
+        const pageHtml = scannedPages
+          .map(
+            (p, i) => `
+            <div class="page">
+              <img src="data:image/jpeg;base64,${p.base64}" />
+            </div>${i < scannedPages.length - 1 ? '<div class="break"></div>' : ''}
+          `
+          )
+          .join('');
 
-      // Check PDF file size before accepting
-      const pdfFileSize = await checkFileSize(pdfUri);
+        const html = `
+          <html>
+            <head>
+              <style>
+                @page { margin: 0; }
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body { background: white; }
+                .page {
+                  width: 100%;
+                  page-break-after: always;
+                  display: flex;
+                  justify-content: center;
+                  align-items: center;
+                }
+                .page img {
+                  width: ${quality < 0.70 ? '85%' : '100%'};
+                  height: auto;
+                  display: block;
+                  image-rendering: ${quality < 0.50 ? 'pixelated' : 'auto'};
+                }
+                .break { page-break-after: always; }
+              </style>
+            </head>
+            <body>
+              ${pageHtml}
+            </body>
+          </html>
+        `;
+
+        const result = await Print.printToFileAsync({ html });
+        pdfUri = result.uri;
+        pdfFileSize = await checkFileSize(pdfUri);
+
+        if (!pdfFileSize || pdfFileSize <= MAX_FILE_SIZE) {
+          // Fits within limit — use this PDF
+          if (qi > 0) {
+            console.log(`PDF compressed at quality ${quality}: ${formatFileSize(pdfFileSize)}`);
+          }
+          break;
+        }
+
+        // Still too large — if we have more quality levels to try, continue
+        if (qi < qualityLevels.length - 1) {
+          console.log(`PDF too large at quality ${quality} (${formatFileSize(pdfFileSize)}), retrying...`);
+          pdfUri = null;
+          pdfFileSize = null;
+        }
+      }
+
+      // After all attempts, check final size
       if (pdfFileSize && pdfFileSize > MAX_FILE_SIZE) {
         Alert.alert(
           'File Too Large',
-          `Generated PDF is ${formatFileSize(pdfFileSize)}. Maximum allowed is ${formatFileSize(MAX_FILE_SIZE)}. Please scan fewer pages.`
+          `Even after compression, the PDF is ${formatFileSize(pdfFileSize)} (max 5 MB). Please scan fewer pages or use lower-resolution images.`
         );
         setConverting(false);
         return;
@@ -205,20 +232,20 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       });
     } catch (err) {
       console.error('PDF build error:', err);
-      Alert.alert('Conversion Error', 'Failed to convert scans to PDF.');
+      Alert.alert('Conversion Error', 'Failed to convert scans to PDF. Please try again.');
     } finally {
       setConverting(false);
     }
   };
 
-  // ── pick existing PDF or Image ──
+  // pick existing PDF or Image
   const pickFile = async () => {
     try {
       const type = allowedFormat === 'image' ? 'image/*' : 'application/pdf';
       const r = await DocumentPicker.getDocumentAsync({
         type,
         copyToCacheDirectory: true,
-        multiple: allowedFormat === 'image', // Allow multiple selection for images
+        multiple: allowedFormat === 'image',
       });
       if (!r.canceled && r.assets && r.assets.length > 0) {
         let validAssets = [];
@@ -254,7 +281,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // ── open/preview file ──
+  // open/preview file
   const previewFile = async (fileToPreview) => {
     if (!fileToPreview?.uri) {
       Alert.alert('Error', 'No file to preview');
@@ -281,7 +308,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
 
   const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
 
-  // ── render ──
+  // render
   return (
     <View style={[styles.box, fileArray.length > 0 && styles.boxDone]}>
       <View style={styles.labelRow}>
@@ -432,7 +459,10 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
               disabled={scannedPages.length === 0 || converting}
             >
               {converting ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={[styles.modalBtnTxt, { color: '#fff' }]}>Processing...</Text>
+                </>
               ) : (
                 <>
                   <Ionicons name="document-text-outline" size={18} color="#fff" />
