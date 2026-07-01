@@ -20,7 +20,7 @@ const getStudentTokenInfo = async (req, res) => {
   if (!studentToken) return res.status(404).json({ success: false, message: 'Token not found.' });
 
   const requiredDocs = getDocumentsForProduct(studentToken.product_code);
-  
+
   const path = require('path');
   let agreementTemplateUrl = null;
   const templatePath = path.join(__dirname, '../uploads/Agreement_template.pdf');
@@ -28,12 +28,35 @@ const getStudentTokenInfo = async (req, res) => {
     agreementTemplateUrl = `${req.protocol}://${req.get('host')}/uploads/Agreement_template.pdf`;
   }
 
+  // --- Fetch existing submission to pre-mark already-uploaded docs ---
+  const existingSub = await Submission.findOne({ token });
+  let already_uploaded_docs = [];   // list of doc labels already uploaded
+  let already_has_agreement = false;
+  let existing_status = null;
+
+  if (existingSub) {
+    already_uploaded_docs = (existingSub.documents || []).map(d => d.label);
+    already_has_agreement = !!existingSub.agreement_url;
+    existing_status = existingSub.status;
+  }
+
+  // Build missing docs list based on existing submission
+  const missing_documents = requiredDocs.filter(
+    d => !already_uploaded_docs.some(u => u.trim().toLowerCase() === d.trim().toLowerCase())
+  );
+  if (!already_has_agreement) missing_documents.push('Agreement (signed)');
+
   res.json({
     success: true,
-    data: { 
-      ...studentToken.toObject(), 
+    data: {
+      ...studentToken.toObject(),
       required_documents: requiredDocs,
-      agreement_template_url: agreementTemplateUrl
+      agreement_template_url: agreementTemplateUrl,
+      // Existing submission state for pre-marking completed docs
+      already_uploaded_docs,
+      already_has_agreement,
+      existing_status,
+      missing_documents,
     },
   });
 };
@@ -163,14 +186,21 @@ const submitDocuments = async (req, res) => {
   if (isComplete) {
     try {
       const docRow = new Array(SUBMISSION_DOC_COLUMNS.length).fill('');
-      for (const doc of uploadedDocs) {
+
+      // Build the full merged doc list (existing + newly uploaded) for sheet sync
+      const allDocsForSheet = submission.documents || [];
+      for (const doc of allDocsForSheet) {
+        // Normalize both sides: trim whitespace and compare case-insensitively
         const colIdx = SUBMISSION_DOC_COLUMNS.findIndex(
-          (col) => col.toLowerCase() === doc.label.toLowerCase()
+          (col) => col.trim().toLowerCase() === (doc.label || '').trim().toLowerCase()
         );
         if (colIdx !== -1) {
-          docRow[colIdx] = doc.cloudinary_url;
+          docRow[colIdx] = doc.cloudinary_url || '';
         }
       }
+
+      // Resolve agreement URL from current submission (merged)
+      const finalAgreementUrl = submission.agreement_url || agreementCloudinaryUrl || '';
 
       const sheetRow = [
         new Date().toISOString(),
@@ -182,7 +212,7 @@ const submitDocuments = async (req, res) => {
         studentToken.degree_description || '',
         studentToken.product_code,
         ...docRow,
-        agreementCloudinaryUrl,
+        finalAgreementUrl,
       ];
       await sheetAppend(SHEETS.SUBMISSIONS, sheetRow);
       submission.synced_to_sheet = true;
