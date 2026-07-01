@@ -2,9 +2,11 @@ const { v4: uuidv4 } = require('uuid');
 const CfToken = require('../models/CfToken');
 const StudentToken = require('../models/StudentToken');
 const Submission = require('../models/Submission');
-const { getCounsellors, sheetAppend, SHEETS } = require('../config/googleSheets');
+const { getCounsellors, sheetAppend, SHEETS, upsertCounsellorRecord } = require('../config/googleSheets');
 const { getDocumentsForProduct } = require('../utils/productDocuments');
 const { sendEmail, emailHtml } = require('../utils/email');
+const { resolveCounsellorPin, buildCounsellorSession, issueCounsellorToken, verifyCounsellorToken } = require('../utils/counsellorAuth');
+const { resolveCounsellorPinReset } = require('../utils/counsellorSheet');
 
 // GET /api/cf/counsellors
 const getCounsellorList = async (req, res) => {
@@ -54,7 +56,7 @@ const registerCF = async (req, res) => {
   // Email counsellor
   const portalUrl = `${process.env.BASE_URL || 'http://localhost:5000'}/counsellor?token=${token}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(portalUrl)}`;
-  
+
   const html = emailHtml(
     'New Student Registration',
     `<p style="font-size:15px;color:#334155;line-height:1.7;">
@@ -93,26 +95,93 @@ const getCounsellorTokenInfo = async (req, res) => {
   res.json({ success: true, data: cfToken });
 };
 
-// POST /api/cf/verify-pin
-// Body: { pin }
-const verifyCfPin = (req, res) => {
-  const { pin } = req.body;
-  const correctPin = process.env.CF_PIN;
+// POST /api/cf/counsellor/register
+// Body: { name, email, pin }
+const registerCounsellorAccount = async (req, res) => {
+  try {
+    const { name, email, pin } = req.body;
+    if (!name || !email || !pin) {
+      return res.status(400).json({ success: false, message: 'Name, email and PIN are required.' });
+    }
 
-  if (!correctPin) {
-    return res.status(400).json({ success: false, message: 'CF PIN not configured on server.' });
+    const result = await upsertCounsellorRecord({ name, email, pin });
+    return res.json({ success: true, message: 'Counsellor account saved.', data: { created: result.created, email } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Failed to save counsellor account.' });
   }
-  if (!pin || String(pin).trim() !== String(correctPin).trim()) {
-    return res.status(401).json({ success: false, message: 'Incorrect PIN. Access denied.' });
+};
+
+// POST /api/cf/counsellor/reset-pin
+// Body: { email, oldPin, newPin } or { email, pin }
+const resetCounsellorPin = async (req, res) => {
+  try {
+    const { email, oldPin, pin, newPin } = req.body;
+    const counsellors = await getCounsellors();
+    const existingCounsellor = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
+
+    if (!existingCounsellor) {
+      return res.status(404).json({ success: false, message: 'Counsellor not found.' });
+    }
+
+    const resetPayload = resolveCounsellorPinReset(existingCounsellor, { email, oldPin, pin, newPin });
+    const result = await upsertCounsellorRecord({ name: existingCounsellor.name, email: resetPayload.email, pin: resetPayload.pin });
+    return res.json({ success: true, message: 'PIN updated successfully.', data: { updated: !result.created, email: resetPayload.email } });
+  } catch (err) {
+    const statusCode = err.message === 'Old PIN is incorrect.' ? 401 : 400;
+    return res.status(statusCode).json({ success: false, message: err.message || 'Failed to reset PIN.' });
   }
-  return res.json({ success: true, message: 'PIN verified.' });
+};
+
+// POST /api/cf/verify-pin
+// Body: { pin, type, counsellor } (type can be 'cf' or 'counsellor')
+const verifyCfPin = (req, res) => {
+  const { pin, type, counsellor } = req.body;
+  const correctCfPin = process.env.CF_PIN;
+  const fallbackCounsellorPin = process.env.COUNSELLOR_PIN || '112233';
+
+  if (type === 'counsellor') {
+    const correctCounsellorPin = resolveCounsellorPin(counsellor, fallbackCounsellorPin);
+    if (!pin || String(pin).trim() !== String(correctCounsellorPin).trim()) {
+      return res.status(401).json({ success: false, message: 'Incorrect Counsellor PIN. Access denied.' });
+    }
+
+    const session = buildCounsellorSession(counsellor);
+    const token = issueCounsellorToken(counsellor);
+    return res.json({
+      success: true,
+      message: 'Counsellor PIN verified.',
+      role: 'counsellor',
+      token,
+      counsellor: session,
+    });
+  } else {
+    if (!correctCfPin) {
+      return res.status(400).json({ success: false, message: 'CF PIN not configured on server.' });
+    }
+    if (!pin || String(pin).trim() !== String(correctCfPin).trim()) {
+      return res.status(401).json({ success: false, message: 'Incorrect Staff PIN. Access denied.' });
+    }
+    return res.json({ success: true, message: 'Staff PIN verified.', role: 'cf' });
+  }
 };
 
 // GET /api/cf/dashboard-stats
 const getDashboardStats = async (req, res) => {
   try {
-    // 1. Total student tokens registered
-    const totalStudents = await StudentToken.countDocuments();
+    const { counsellor_name, counsellor_email, counsellor_token } = req.query;
+    const filter = {};
+    const session = verifyCounsellorToken(counsellor_token);
+
+    if (counsellor_token && session?.email) {
+      filter.counsellor_email = session.email;
+    } else if (counsellor_email) {
+      filter.counsellor_email = counsellor_email;
+    } else if (counsellor_name) {
+      filter.counsellor_name = { $regex: new RegExp('^' + counsellor_name.trim() + '$', 'i') };
+    }
+
+    // 1. Total student tokens registered (applying filter if present)
+    const totalStudents = await StudentToken.countDocuments(filter);
 
     // 2. Submissions
     const submissions = await Submission.find();
@@ -125,7 +194,7 @@ const getDashboardStats = async (req, res) => {
       submissionMap[sub.token] = sub;
     });
 
-    const studentTokens = await StudentToken.find();
+    const studentTokens = await StudentToken.find(filter);
     let completedCount = 0;
     let pendingCount = 0;
     const studentStatuses = [];
@@ -264,4 +333,13 @@ const sendReminderEmail = async (req, res) => {
   }
 };
 
-module.exports = { getCounsellorList, registerCF, getCounsellorTokenInfo, verifyCfPin, getDashboardStats, sendReminderEmail };
+module.exports = {
+  getCounsellorList,
+  registerCF,
+  getCounsellorTokenInfo,
+  verifyCfPin,
+  getDashboardStats,
+  sendReminderEmail,
+  registerCounsellorAccount,
+  resetCounsellorPin,
+};
