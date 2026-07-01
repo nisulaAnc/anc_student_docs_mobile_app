@@ -119,13 +119,21 @@ export default function CounsellorPortalScreen({ navigation, route }) {
               <Button title="Confirm & Send Student Link" onPress={confirmProgram} loading={loading}
                 disabled={!selected} style={{ marginTop: 20 }}
                 icon={<Ionicons name="arrow-forward" size={16} color="#fff" />} />
+
+              <TouchableOpacity
+                style={styles.dashboardLinkBtn}
+                onPress={() => navigation.navigate('CFDashboard', { counsellorName: data?.counsellor_name })}
+              >
+                <Ionicons name="analytics" size={16} color={COLORS.accent} />
+                <Text style={styles.dashboardLinkTxt}>View Dashboard (My Students Only)</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
 
         {phase === PHASE.DONE && (
-          <Animated.View style={[styles.card, { 
-            alignItems: 'center', 
+          <Animated.View style={[styles.card, {
+            alignItems: 'center',
             padding: 40,
             opacity: successAnim,
             transform: [{
@@ -146,13 +154,13 @@ export default function CounsellorPortalScreen({ navigation, route }) {
             </View>
             <Text style={styles.doneTitle}>Link Sent Successfully!</Text>
             <Text style={styles.doneDesc}>
-              The student has been assigned to the <Text style={styles.bold}>{selected}</Text> programme. 
+              The student has been assigned to the <Text style={styles.bold}>{selected}</Text> programme.
               An email with the secure upload link has been sent to <Text style={styles.bold}>{data?.student_email}</Text>.
             </Text>
-            <Button 
-              title="Return to Home" 
-              onPress={() => navigation.navigate('Home')} 
-              style={{ marginTop: 30, width: '100%', backgroundColor: COLORS.navy }} 
+            <Button
+              title="Return to Home"
+              onPress={() => navigation.navigate('Home')}
+              style={{ marginTop: 30, width: '100%', backgroundColor: COLORS.navy }}
             />
           </Animated.View>
         )}
@@ -226,13 +234,13 @@ const createStyles = (COLORS) => StyleSheet.create({
   pickerPh: { flex: 1, fontSize: 14, color: COLORS.muted },
   resend: { marginTop: 14, padding: 10 },
   resendTxt: { color: COLORS.accent, fontSize: 14, fontWeight: '600' },
-  
+
   // Premium Success Styles
   successIconWrapper: { width: 90, height: 90, borderRadius: 45, alignItems: 'center', justifyContent: 'center', marginBottom: 24, shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 10 },
   successIconBg: { ...StyleSheet.absoluteFillObject, backgroundColor: '#10B981', borderRadius: 45 },
   doneTitle: { fontSize: 22, fontWeight: '800', color: COLORS.navy, marginBottom: 12, textAlign: 'center', letterSpacing: -0.5 },
   doneDesc: { fontSize: 15, color: COLORS.text, textAlign: 'center', lineHeight: 24, opacity: 0.8 },
-  
+
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '85%' },
   sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
@@ -244,4 +252,8 @@ const createStyles = (COLORS) => StyleSheet.create({
   pBadgeTxt: { color: '#fff', fontSize: 11, fontWeight: '800' },
   pLabel: { fontSize: 14, fontWeight: '600', color: COLORS.text },
   pDesc: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
+
+  // Dashboard link button
+  dashboardLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, paddingVertical: 10 },
+  dashboardLinkTxt: { color: COLORS.accent, fontSize: 14, fontWeight: '700' },
 });	
