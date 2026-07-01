@@ -405,7 +405,7 @@ export default function HomeScreen({ navigation }) {
                               style={styles.ccDropdownItem}
                               onPress={() => {
                                 setSelectedCounsellor(item);
-                                setCounsellorForm((prev) => ({ ...prev, name: item.name, email: prev.email || item.email }));
+                                setCounsellorForm((prev) => ({ ...prev, name: item.name, email: item.email }));
                                 setShowCounsellorNameDropdown(false);
                                 setCounsellorSearch('');
                               }}
@@ -423,7 +423,7 @@ export default function HomeScreen({ navigation }) {
                 </View>
               )}
 
-              {/* Email — always typed manually, never auto-filled */}
+              {/* Email — auto-fills when a counsellor name is selected */}
               <View style={styles.ccFieldGroup}>
                 <Text style={styles.ccFieldLabel}>Counsellor Email</Text>
                 <View style={styles.ccInputWrap}>
