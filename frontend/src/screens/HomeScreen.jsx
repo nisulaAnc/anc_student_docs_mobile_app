@@ -35,6 +35,7 @@ export default function HomeScreen({ navigation }) {
   const [counsellorForm, setCounsellorForm] = useState({ name: '', email: '', pin: '', oldPin: '', newPin: '' });
   const [counsellorFormError, setCounsellorFormError] = useState('');
   const [counsellorFormLoading, setCounsellorFormLoading] = useState(false);
+  const displayedCounsellorName = counsellorForm.name || selectedCounsellor?.name || '';
 
   useEffect(() => {
     // Prefetch counsellors list
@@ -72,7 +73,7 @@ export default function HomeScreen({ navigation }) {
       type: 'cf',
     },
     {
-      screen: 'CFDashboard',
+      screen: 'CFDashboard', // Routes to filtered dashboard
       params: {},
       icon: 'people',
       color: '#EC4899',
@@ -250,11 +251,13 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         ))}
 
-        <Text style={styles.footer}>© {new Date().getFullYear()} ANC Education · Secure Document Portal</Text>
-        <Text style={styles.footer}>Developed by Nisula Premaratne | IT Department</Text>
+        <Text style={styles.footer}>© {new Date().getFullYear()} ANC Education · Secure Document Portal
+          {"\n"}
+          Developed by Nisula Premaratne | IT Department
+        </Text>
       </ScrollView>
 
-      {/* Counsellor Picker Modal */}
+      {/* ── Counsellor Picker Modal ── */}
       <Modal visible={showCounsellorPicker} animationType="slide" transparent>
         <View style={styles.modalBg}>
           <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
@@ -296,162 +299,247 @@ export default function HomeScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Create / Reset Counsellor Login Modal */}
-      <Modal visible={showCreateCounsellorModal} animationType="slide" transparent>
-        <View style={styles.modalBg}>
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-            <View style={styles.sheetHead}>
-              <Text style={styles.sheetTitle}>{createMode === 'create' ? 'Create Counsellor Login' : 'Reset Forgot PIN'}</Text>
-              <TouchableOpacity onPress={() => { setShowCreateCounsellorModal(false); setCounsellorFormError(''); }}>
-                <Ionicons name="close" size={22} color={COLORS.text} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.toggleRow}>
-              <TouchableOpacity
-                style={[styles.toggleBtn, createMode === 'create' && styles.toggleBtnActive]}
-                onPress={() => {
-                  setCreateMode('create');
-                  setCounsellorForm({ name: '', email: '', pin: '', oldPin: '', newPin: '' });
-                  setCounsellorFormError('');
-                }}
-              >
-                <Text style={[styles.toggleBtnText, createMode === 'create' && styles.toggleBtnTextActive]}>Create New</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.toggleBtn, createMode === 'reset' && styles.toggleBtnActive]}
-                onPress={() => {
-                  setCreateMode('reset');
-                  setCounsellorForm({ name: '', email: selectedCounsellor?.email || '', pin: '', oldPin: '', newPin: '' });
-                  setCounsellorFormError('');
-                }}
-              >
-                <Text style={[styles.toggleBtnText, createMode === 'reset' && styles.toggleBtnTextActive]}>Forgot PIN</Text>
-              </TouchableOpacity>
-            </View>
-
-            {createMode === 'create' ? (
-              <View style={styles.dropdownWrap}>
-                <TouchableOpacity
-                  style={styles.dropdownButton}
-                  onPress={() => setShowCounsellorNameDropdown((prev) => !prev)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.dropdownLabel}>Counsellor name</Text>
-                    <Text style={styles.dropdownValue}>{counsellorForm.name || 'Select counsellor name'}</Text>
-                  </View>
-                  <Ionicons name={showCounsellorNameDropdown ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.muted} />
-                </TouchableOpacity>
-
-                {showCounsellorNameDropdown ? (
-                  <View style={styles.dropdownList}>
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Search counsellor name..."
-                      placeholderTextColor={COLORS.muted}
-                      value={counsellorSearch}
-                      onChangeText={setCounsellorSearch}
-                    />
-                    <FlatList
-                      data={counsellors.filter((c) => (c.name || '').toLowerCase().includes((counsellorSearch || '').toLowerCase()))}
-                      keyExtractor={(item) => item.email}
-                      style={{ maxHeight: 180 }}
-                      keyboardShouldPersistTaps="handled"
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={styles.pItem}
-                          onPress={() => {
-                            setCounsellorForm((prev) => ({ ...prev, name: item.name, email: item.email }));
-                            setShowCounsellorNameDropdown(false);
-                            setCounsellorSearch('');
-                          }}
-                        >
-                          <Ionicons name="person-outline" size={16} color={COLORS.navy} />
-                          <Text style={styles.pLabel}>{item.name}</Text>
-                        </TouchableOpacity>
-                      )}
-                    />
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Counsellor email"
-              placeholderTextColor={COLORS.muted}
-              value={counsellorForm.email}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              onChangeText={(t) => setCounsellorForm({ ...counsellorForm, email: t })}
-            />
-
-            {createMode === 'create' ? (
-              <TextInput
-                style={styles.searchInput}
-                placeholder="New 6-digit PIN"
-                placeholderTextColor={COLORS.muted}
-                value={counsellorForm.pin}
-                keyboardType="number-pad"
-                maxLength={6}
-                secureTextEntry
-                onChangeText={(t) => setCounsellorForm({ ...counsellorForm, pin: t.replace(/[^0-9]/g, '').slice(0, 6) })}
-              />
-            ) : (
-              <>
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Old 6-digit PIN"
-                  placeholderTextColor={COLORS.muted}
-                  value={counsellorForm.oldPin}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  secureTextEntry
-                  onChangeText={(t) => setCounsellorForm({ ...counsellorForm, oldPin: t.replace(/[^0-9]/g, '').slice(0, 6) })}
-                />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="New 6-digit PIN"
-                  placeholderTextColor={COLORS.muted}
-                  value={counsellorForm.newPin}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  secureTextEntry
-                  onChangeText={(t) => setCounsellorForm({ ...counsellorForm, newPin: t.replace(/[^0-9]/g, '').slice(0, 6) })}
-                />
-              </>
-            )}
-
-            {counsellorFormError ? (
-              <View style={styles.pinErrorRow}>
-                <Ionicons name="alert-circle" size={14} color={COLORS.red} />
-                <Text style={styles.pinErrorTxt}>{counsellorFormError}</Text>
-              </View>
-            ) : null}
-
+      {/* ── Create / Reset Counsellor Login Modal — beautiful centered popup ── */}
+      <Modal
+        visible={showCreateCounsellorModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => { if (!counsellorFormLoading) { setShowCreateCounsellorModal(false); setCounsellorFormError(''); } }}
+      >
+        <View style={styles.ccOverlay}>
+          <View style={styles.ccCard}>
             <TouchableOpacity
-              style={[styles.pinBtn, counsellorFormLoading && styles.pinBtnDisabled]}
-              onPress={handleCounsellorFormSubmit}
+              style={styles.ccCloseBtn}
+              onPress={() => { setShowCreateCounsellorModal(false); setCounsellorFormError(''); }}
               disabled={counsellorFormLoading}
             >
-              {counsellorFormLoading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.pinBtnTxt}>{createMode === 'create' ? 'Create Login' : 'Save New PIN'}</Text>}
+              <Ionicons name="close" size={20} color={COLORS.muted} />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.linkBtn}
-              onPress={() => {
-                setShowCreateCounsellorModal(false);
-                setShowCounsellorPicker(true);
-                setCounsellorFormError('');
-              }}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 2 }}
             >
-              <Text style={styles.linkBtnText}>Use existing counsellor login</Text>
-            </TouchableOpacity>
+              {/* Header */}
+              <View style={styles.ccHeader}>
+                <LinearGradient colors={[COLORS.navy, COLORS.blue]} style={styles.ccIconWrap}>
+                  <Ionicons name={createMode === 'create' ? 'person-add' : 'key'} size={26} color="#fff" />
+                </LinearGradient>
+                <Text style={styles.ccTitle}>{createMode === 'create' ? 'Create Counsellor Login' : 'Reset Your PIN'}</Text>
+                <Text style={styles.ccSubtitle}>
+                  {createMode === 'create'
+                    ? 'Set up your secure 6-digit PIN to access the Counsellor Dashboard.'
+                    : 'Verify your old PIN, then choose a new one.'}
+                </Text>
+              </View>
+
+              {/* Segmented toggle */}
+              <View style={styles.ccToggleRow}>
+                <TouchableOpacity
+                  style={[styles.ccToggleBtn, createMode === 'create' && styles.ccToggleBtnActive]}
+                  onPress={() => {
+                    setCreateMode('create');
+                    setCounsellorForm({ name: '', email: '', pin: '', oldPin: '', newPin: '' });
+                    setCounsellorFormError('');
+                  }}
+                >
+                  <Ionicons name="person-add-outline" size={14} color={createMode === 'create' ? '#fff' : COLORS.muted} />
+                  <Text style={[styles.ccToggleTxt, createMode === 'create' && styles.ccToggleTxtActive]}>Create New</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.ccToggleBtn, createMode === 'reset' && styles.ccToggleBtnActive]}
+                  onPress={() => {
+                    setCreateMode('reset');
+                    setCounsellorForm({
+                      name: counsellorForm.name || selectedCounsellor?.name || '',
+                      email: selectedCounsellor?.email || counsellorForm.email || '',
+                      pin: '',
+                      oldPin: '',
+                      newPin: ''
+                    });
+                    setCounsellorFormError('');
+                  }}
+                >
+                  <Ionicons name="key-outline" size={14} color={createMode === 'reset' ? '#fff' : COLORS.muted} />
+                  <Text style={[styles.ccToggleTxt, createMode === 'reset' && styles.ccToggleTxtActive]}>Forgot PIN</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Counsellor name (create mode only) */}
+              {createMode === 'create' && (
+                <View style={styles.ccFieldGroup}>
+                  <Text style={styles.ccFieldLabel}>Counsellor Name</Text>
+                  <TouchableOpacity
+                    style={styles.ccInputWrap}
+                    onPress={() => setShowCounsellorNameDropdown((prev) => !prev)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="person-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
+                    <Text style={displayedCounsellorName ? styles.ccInputValue : styles.ccInputPlaceholder} numberOfLines={1}>
+                      {displayedCounsellorName || 'Select your name'}
+                    </Text>
+                    <Ionicons name={showCounsellorNameDropdown ? 'chevron-up' : 'chevron-down'} size={16} color={COLORS.muted} />
+                  </TouchableOpacity>
+
+                  {showCounsellorNameDropdown && (
+                    <View style={styles.ccDropdownList}>
+                      <TextInput
+                        style={styles.ccDropdownSearch}
+                        placeholder="Search counsellor name..."
+                        placeholderTextColor={COLORS.muted}
+                        value={counsellorSearch}
+                        onChangeText={setCounsellorSearch}
+                      />
+                      {/* Fixed: Replaced FlatList with ScrollView and map */}
+                      <ScrollView
+                        style={{ maxHeight: 160 }}
+                        showsVerticalScrollIndicator={true}
+                        keyboardShouldPersistTaps="handled"
+                      >
+                        {counsellors
+                          .filter((c) => (c.name || '').toLowerCase().includes((counsellorSearch || '').toLowerCase()))
+                          .map((item) => (
+                            <TouchableOpacity
+                              key={item.email}
+                              style={styles.ccDropdownItem}
+                              onPress={() => {
+                                setSelectedCounsellor(item);
+                                setCounsellorForm((prev) => ({ ...prev, name: item.name, email: prev.email || item.email }));
+                                setShowCounsellorNameDropdown(false);
+                                setCounsellorSearch('');
+                              }}
+                            >
+                              <Ionicons name="person-circle-outline" size={18} color={COLORS.navy} />
+                              <Text style={styles.ccDropdownItemTxt}>{item.name}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        {counsellors.filter((c) => (c.name || '').toLowerCase().includes((counsellorSearch || '').toLowerCase())).length === 0 && (
+                          <Text style={styles.ccDropdownEmpty}>No matching counsellor.</Text>
+                        )}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Email — always typed manually, never auto-filled */}
+              <View style={styles.ccFieldGroup}>
+                <Text style={styles.ccFieldLabel}>Counsellor Email</Text>
+                <View style={styles.ccInputWrap}>
+                  <Ionicons name="mail-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
+                  <TextInput
+                    style={styles.ccTextInput}
+                    placeholder="you@example.com"
+                    placeholderTextColor={COLORS.muted}
+                    value={counsellorForm.email}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    onChangeText={(t) => setCounsellorForm({ ...counsellorForm, email: t })}
+                  />
+                </View>
+              </View>
+
+              {/* PIN field(s) */}
+              {createMode === 'create' ? (
+                <View style={styles.ccFieldGroup}>
+                  <Text style={styles.ccFieldLabel}>New 6-Digit PIN</Text>
+                  <View style={styles.ccInputWrap}>
+                    <Ionicons name="lock-closed-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
+                    <TextInput
+                      style={[styles.ccTextInput, styles.ccPinTextInput]}
+                      placeholder="● ● ● ● ● ●"
+                      placeholderTextColor={COLORS.muted}
+                      value={counsellorForm.pin}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      secureTextEntry
+                      onChangeText={(t) => setCounsellorForm({ ...counsellorForm, pin: t.replace(/[^0-9]/g, '').slice(0, 6) })}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.ccFieldGroup}>
+                    <Text style={styles.ccFieldLabel}>Old 6-Digit PIN</Text>
+                    <View style={styles.ccInputWrap}>
+                      <Ionicons name="lock-open-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
+                      <TextInput
+                        style={[styles.ccTextInput, styles.ccPinTextInput]}
+                        placeholder="● ● ● ● ● ●"
+                        placeholderTextColor={COLORS.muted}
+                        value={counsellorForm.oldPin}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        secureTextEntry
+                        onChangeText={(t) => setCounsellorForm({ ...counsellorForm, oldPin: t.replace(/[^0-9]/g, '').slice(0, 6) })}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.ccFieldGroup}>
+                    <Text style={styles.ccFieldLabel}>New 6-Digit PIN</Text>
+                    <View style={styles.ccInputWrap}>
+                      <Ionicons name="lock-closed-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
+                      <TextInput
+                        style={[styles.ccTextInput, styles.ccPinTextInput]}
+                        placeholder="● ● ● ● ● ●"
+                        placeholderTextColor={COLORS.muted}
+                        value={counsellorForm.newPin}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        secureTextEntry
+                        onChangeText={(t) => setCounsellorForm({ ...counsellorForm, newPin: t.replace(/[^0-9]/g, '').slice(0, 6) })}
+                      />
+                    </View>
+                  </View>
+                </>
+              )}
+
+              {counsellorFormError ? (
+                <View style={styles.pinErrorRow}>
+                  <Ionicons name="alert-circle" size={14} color={COLORS.red} />
+                  <Text style={styles.pinErrorTxt}>{counsellorFormError}</Text>
+                </View>
+              ) : null}
+
+              <TouchableOpacity
+                onPress={handleCounsellorFormSubmit}
+                disabled={counsellorFormLoading}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={[COLORS.navy, COLORS.blue]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.ccPrimaryBtn, counsellorFormLoading && styles.pinBtnDisabled]}
+                >
+                  {counsellorFormLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name={createMode === 'create' ? 'checkmark-circle' : 'save'} size={18} color="#fff" />
+                      <Text style={styles.pinBtnTxt}>{createMode === 'create' ? 'Create Login' : 'Save New PIN'}</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.linkBtn}
+                onPress={() => {
+                  setShowCreateCounsellorModal(false);
+                  setShowCounsellorPicker(true);
+                  setCounsellorFormError('');
+                }}
+              >
+                <Text style={styles.linkBtnText}>Already have a login? Use existing counsellor login</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* PIN Lock Modal */}
+      {/* ── PIN Lock Modal ── */}
       <Modal
         visible={pinModalVisible}
         animationType="fade"
@@ -576,21 +664,27 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.pinCancelTxt}>Cancel</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.pinCancelBtn}
-              onPress={() => {
-                setPinModalVisible(false);
-                setPin('');
-                setPinError('');
-                setCreateMode('reset');
-                setCounsellorForm({ name: '', email: selectedCounsellor?.email || '', pin: '', oldPin: '', newPin: '' });
-                setCounsellorFormError('');
-                setShowCreateCounsellorModal(true);
-              }}
-              disabled={pinLoading}
-            >
-              <Text style={styles.pinCancelTxt}>Forgot PIN?</Text>
-            </TouchableOpacity>
+            {/* "Forgot PIN?" only applies to the Counsellor flow — counsellor PINs are
+                per-person and individually resettable. The CF Registration / CF Portal
+                Dashboard PIN is a single shared staff PIN with no per-user reset, so
+                showing "Forgot PIN?" there made no sense and was removed. */}
+            {isCounsellorFlow && (
+              <TouchableOpacity
+                style={styles.pinCancelBtn}
+                onPress={() => {
+                  setPinModalVisible(false);
+                  setPin('');
+                  setPinError('');
+                  setCreateMode('reset');
+                  setCounsellorForm({ name: '', email: selectedCounsellor?.email || '', pin: '', oldPin: '', newPin: '' });
+                  setCounsellorFormError('');
+                  setShowCreateCounsellorModal(true);
+                }}
+                disabled={pinLoading}
+              >
+                <Text style={styles.pinCancelTxt}>Forgot PIN?</Text>
+              </TouchableOpacity>
+            )}
 
           </View>
         </View>
@@ -634,7 +728,7 @@ const createStyles = (COLORS) => StyleSheet.create({
   lockBadgeTxt: { fontSize: 10, fontWeight: '700', color: COLORS.navy },
   footer: { textAlign: 'center', color: COLORS.muted, fontSize: 12, marginTop: 20 },
 
-  // PIN Modal 
+  // ── PIN Modal ──
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   pinSheet: {
     backgroundColor: COLORS.white, borderRadius: 24, width: '100%',
@@ -721,4 +815,60 @@ const createStyles = (COLORS) => StyleSheet.create({
   pItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, marginBottom: 4 },
   pItemSel: { backgroundColor: COLORS.accent + '18' },
   pLabel: { fontSize: 14, fontWeight: '600', color: COLORS.text, flex: 1 },
+
+  // ── Create/Reset Counsellor Login — beautiful centered popup ──
+  ccOverlay: { flex: 1, backgroundColor: 'rgba(10,36,99,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  ccCard: {
+    width: '100%', maxWidth: 440, maxHeight: '90%', backgroundColor: COLORS.white, borderRadius: 28,
+    padding: 26, shadowColor: '#000', shadowOffset: { width: 0, height: 24 }, shadowOpacity: 0.3, shadowRadius: 48, elevation: 24,
+  },
+  ccCloseBtn: {
+    position: 'absolute', top: 16, right: 16, zIndex: 2,
+    width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.bg,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  ccHeader: { alignItems: 'center', marginBottom: 20, paddingTop: 6 },
+  ccIconWrap: {
+    width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+    shadowColor: COLORS.navy, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 14, elevation: 8,
+  },
+  ccTitle: { fontSize: 20, fontWeight: '800', color: COLORS.navy, marginBottom: 6, textAlign: 'center' },
+  ccSubtitle: { fontSize: 13, color: COLORS.muted, textAlign: 'center', lineHeight: 19, paddingHorizontal: 6 },
+
+  ccToggleRow: { flexDirection: 'row', gap: 6, marginBottom: 20, backgroundColor: COLORS.bg, borderRadius: 14, padding: 4 },
+  ccToggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 11 },
+  ccToggleBtnActive: { backgroundColor: COLORS.navy },
+  ccToggleTxt: { fontSize: 12.5, fontWeight: '700', color: COLORS.muted },
+  ccToggleTxtActive: { color: '#fff' },
+
+  ccFieldGroup: { marginBottom: 14 },
+  ccFieldLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', color: COLORS.navy, opacity: 0.7, marginBottom: 7 },
+  ccInputWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.bg, borderWidth: 1.5, borderColor: COLORS.border,
+    borderRadius: 14, paddingHorizontal: 14, height: 50,
+  },
+  ccInputIcon: { flexShrink: 0 },
+  ccInputValue: { flex: 1, fontSize: 14, color: COLORS.navy, fontWeight: '600' },
+  ccInputPlaceholder: { flex: 1, fontSize: 14, color: COLORS.muted },
+  ccTextInput: { flex: 1, fontSize: 14, color: COLORS.text, fontWeight: '600', height: '100%' },
+  ccPinTextInput: { letterSpacing: 6, fontWeight: '800' },
+
+  ccDropdownList: {
+    marginTop: 8, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 14,
+    backgroundColor: COLORS.white, padding: 8,
+    shadowColor: COLORS.navy, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+  },
+  ccDropdownSearch: {
+    backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    padding: 10, fontSize: 13, color: COLORS.text, marginBottom: 8,
+  },
+  ccDropdownItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 10 },
+  ccDropdownItemTxt: { fontSize: 13.5, color: COLORS.text, fontWeight: '600' },
+  ccDropdownEmpty: { fontSize: 12.5, color: COLORS.muted, textAlign: 'center', paddingVertical: 14 },
+
+  ccPrimaryBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderRadius: 14, paddingVertical: 15, marginTop: 4,
+  },
 });
