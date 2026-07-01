@@ -1,6 +1,6 @@
 const errorHandler = (err, req, res, next) => {
   console.error('❌ Error:', err.message);
-  
+
   // Handle Multer file size limit error
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({
@@ -8,7 +8,7 @@ const errorHandler = (err, req, res, next) => {
       message: 'File size exceeds 5MB limit. Please upload a smaller file.',
     });
   }
-  
+
   // Handle other Multer errors
   if (err.name === 'MulterError') {
     if (err.code === 'LIMIT_FILE_COUNT') {
@@ -22,7 +22,7 @@ const errorHandler = (err, req, res, next) => {
       message: err.message || 'File upload error',
     });
   }
-  
+
   const status = err.statusCode || 500;
   res.status(status).json({
     success: false,

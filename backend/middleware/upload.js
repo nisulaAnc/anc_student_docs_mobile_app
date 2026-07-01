@@ -24,7 +24,7 @@ const storage = new CloudinaryStorage({
           const docLabels = JSON.parse(req.body.doc_labels || '[]');
           const index = parseInt(file.fieldname.replace('doc_', ''), 10);
           if (docLabels[index]) docName = docLabels[index];
-        } catch(e) {}
+        } catch (e) { }
       }
       const safeDocName = docName.replace(/[^a-zA-Z0-9.\- ]/g, '').trim().replace(/\s+/g, '_');
       return `${baseFolder}/${safeDocName}`;
@@ -34,8 +34,8 @@ const storage = new CloudinaryStorage({
       let cfNumber = 'UnknownCF';
       if (req.body.token) {
         if (!req.cachedCfNumber) {
-           const studentToken = await StudentToken.findOne({ token: req.body.token });
-           if (studentToken) req.cachedCfNumber = studentToken.cf_number;
+          const studentToken = await StudentToken.findOne({ token: req.body.token });
+          if (studentToken) req.cachedCfNumber = studentToken.cf_number;
         }
         if (req.cachedCfNumber) cfNumber = req.cachedCfNumber;
       }
@@ -48,12 +48,12 @@ const storage = new CloudinaryStorage({
           const docLabels = JSON.parse(req.body.doc_labels || '[]');
           const index = parseInt(file.fieldname.replace('doc_', ''), 10);
           if (docLabels[index]) docName = docLabels[index];
-        } catch(e) {}
+        } catch (e) { }
       }
-      
+
       const safeDocName = docName.replace(/[^a-zA-Z0-9.\- ]/g, '').trim().replace(/\s+/g, '_');
       const ext = file.originalname.split('.').pop();
-      
+
       // Cloudinary will treat this exactly as requested, e.g., CFN-56432_passport_size_photograph
       // In 'auto' mode, Cloudinary automatically appends the correct extension (.png, .jpg, .pdf)
       return `${cfNumber}_${safeDocName}`;
