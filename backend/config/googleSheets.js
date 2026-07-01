@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
+const { buildCounsellorSheetRow } = require('../utils/counsellorSheet');
 
 // ── Named document columns for the Submissions sheet (columns 9–30, 0-indexed as 8–29) ──
 const SUBMISSION_DOC_COLUMNS = [
@@ -155,13 +156,48 @@ async function sheetFindRow(tab, colIndex, value) {
   return null;
 }
 
+async function upsertCounsellorRecord(counsellor) {
+  const rows = await sheetRead(SHEETS.COUNSELLORS, 'A2:G200');
+  const targetEmail = String(counsellor.email || '').trim().toLowerCase();
+
+  if (!targetEmail) {
+    throw new Error('Counsellor email is required.');
+  }
+
+  const existingIndex = rows.findIndex((row) => {
+    const existingEmail = row[4] ? String(row[4]).trim().toLowerCase() : '';
+    return existingEmail === targetEmail;
+  });
+
+  const existingRow = existingIndex >= 0 ? rows[existingIndex] : [];
+  const rowValues = buildCounsellorSheetRow(existingRow, {
+    name: counsellor.name,
+    email: targetEmail,
+    pin: counsellor.pin,
+  });
+
+  if (existingIndex >= 0) {
+    const rowNumber = existingIndex + 2;
+    await sheetUpdateRow(SHEETS.COUNSELLORS, rowNumber, rowValues);
+    return { rowNumber, created: false };
+  }
+
+  await sheetAppend(SHEETS.COUNSELLORS, rowValues);
+  return { rowNumber: rows.length + 2, created: true };
+}
+
 async function getCounsellors() {
-  const rows = await sheetRead(SHEETS.COUNSELLORS, 'A2:E200');
+  const rows = await sheetRead(SHEETS.COUNSELLORS, 'A2:G200');
   const out = [];
   for (const r of rows) {
     const name = r[2] ? r[2].trim() : '';
     const email = r[4] ? r[4].trim() : '';
-    if (name && email) out.push({ name, email });
+    const pin = r[5] ? String(r[5]).trim() : '';
+    if (name && email) {
+      const counsellor = { name, email };
+      if (pin) counsellor.pin = pin;
+      out.push(counsellor);
+    }
   }
   return out;
 }
@@ -207,6 +243,7 @@ module.exports = {
   sheetUpdateRow,
   sheetFindRow,
   getCounsellors,
+  upsertCounsellorRecord,
   getProgramsDetailed,
   getProgramDetailsByLabel,
   uploadFileToDrive,
