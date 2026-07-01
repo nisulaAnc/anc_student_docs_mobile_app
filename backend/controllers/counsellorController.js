@@ -41,6 +41,7 @@ const selectProgram = async (req, res) => {
     student_name: cfToken.student_name,
     student_email: cfToken.student_email,
     counsellor_name: cfToken.counsellor_name,
+    counsellor_email: cfToken.counsellor_email,
     program: programDetail.label,
     degree_description: programDetail.description,
     product_code: programDetail.product_code,
