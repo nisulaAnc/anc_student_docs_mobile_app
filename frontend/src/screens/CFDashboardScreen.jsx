@@ -38,15 +38,27 @@ export default function CFDashboardScreen({ navigation, route }) {
     setAlert(null);
     try {
       const params = {};
-      const token = await AsyncStorage.getItem('counsellorSession');
+      // Only scope the dashboard to a single counsellor when this screen was
+      // explicitly opened as a counsellor-specific view (i.e. counsellorName was
+      // passed via navigation). Previously the counsellor's saved login session
+      // token was ALWAYS attached, even when opening the plain "CF Portal
+      // Dashboard" (staff view). That meant once anyone had logged in as a
+      // counsellor on the device, the CF Portal Dashboard silently filtered
+      // down to just that counsellor's students instead of showing the total
+      // across all students. Restricting the token lookup to the counsellor
+      // flow fixes both dashboards:
+      //  - CF Portal Dashboard (no counsellorName) -> always shows ALL students
+      //  - Counsellor Dashboard (counsellorName set) -> shows only that
+      //    counsellor's own ("regarding") students
       if (counsellorName) {
         params.counsellor_name = counsellorName;
-      }
-      if (counsellorEmail) {
-        params.counsellor_email = counsellorEmail;
-      }
-      if (token) {
-        params.counsellor_token = token;
+        if (counsellorEmail) {
+          params.counsellor_email = counsellorEmail;
+        }
+        const token = await AsyncStorage.getItem('counsellorSession');
+        if (token) {
+          params.counsellor_token = token;
+        }
       }
       const res = await getCfDashboardStats(params);
       if (res.data?.success) {
@@ -73,7 +85,7 @@ export default function CFDashboardScreen({ navigation, route }) {
       const res = await sendPendingReminder(student.token);
       if (res.data?.success) {
         Alert.alert(
-          'Reminder Sent',
+          '✅ Reminder Sent',
           `A pending document reminder email has been successfully sent to ${student.student_name} at ${student.student_email}.`
         );
       } else {
