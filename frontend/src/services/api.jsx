@@ -25,27 +25,31 @@ api.interceptors.response.use(
   }
 );
 
-// ── CF / Registration ────────────────────────────────────────────────
+// CF / Registration
 export const getCounsellors = () => api.get('/cf/counsellors');
 
 export const registerStudent = (data) => api.post('/cf/register', data);
 
-export const verifyCfPin = (pin) => api.post('/cf/verify-pin', { pin });
+export const verifyCfPin = (pin, type = 'cf', counsellor = null) => api.post('/cf/verify-pin', { pin, type, counsellor });
+
+export const registerCounsellorAccount = (data) => api.post('/cf/counsellor/register', data);
+
+export const resetCounsellorPin = (data) => api.post('/cf/counsellor/reset-pin', data);
 
 export const getCounsellorTokenInfo = (token) =>
   api.get('/cf/counsellor/token-info', { params: { token } });
 
-export const getCfDashboardStats = () => api.get('/cf/dashboard-stats');
+export const getCfDashboardStats = (params) => api.get('/cf/dashboard-stats', { params });
 
 export const sendPendingReminder = (token) => api.post('/cf/send-reminder', { token });
 
-// ── Counsellor Portal ────────────────────────────────────────────────
+// Counsellor Portal
 export const getPrograms = () => api.get('/counsellor/programs');
 
 export const selectProgram = (cf_token, program_label) =>
   api.post('/counsellor/select-program', { cf_token, program_label });
 
-// ── Student Portal ───────────────────────────────────────────────────
+// Student Portal
 export const getStudentTokenInfo = (token) =>
   api.get('/student/token-info', { params: { token } });
 
@@ -57,12 +61,12 @@ export const submitDocuments = (token, files, docLabels, agreementFile = null) =
   files.forEach((fileOrFiles, index) => {
     if (!fileOrFiles) return;
     const fileArray = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
-    
+
     fileArray.forEach((file) => {
       const ext = (file.uri || '').split('.').pop().toLowerCase() || 'pdf';
       const mimeType = ext === 'pdf' ? 'application/pdf'
         : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
-        : ext === 'png' ? 'image/png' : 'application/octet-stream';
+          : ext === 'png' ? 'image/png' : 'application/octet-stream';
 
       formData.append(`doc_${index}`, {
         uri: file.uri,
