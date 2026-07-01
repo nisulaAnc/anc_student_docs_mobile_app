@@ -1,7 +1,7 @@
 const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
-const { buildCounsellorSheetRow } = require('../utils/counsellorSheet');
+const { buildCounsellorSheetRow, getCounsellorFieldIndexes } = require('../utils/counsellorSheet');
 
 // Named document columns for the Submissions sheet (columns 9–30, 0-indexed as 8–29)
 const SUBMISSION_DOC_COLUMNS = [
@@ -157,24 +157,27 @@ async function sheetFindRow(tab, colIndex, value) {
 }
 
 async function upsertCounsellorRecord(counsellor) {
-  const rows = await sheetRead(SHEETS.COUNSELLORS, 'A2:G200');
+  const rows = await sheetRead(SHEETS.COUNSELLORS, 'A1:G200');
+  const headers = Array.isArray(rows[0]) ? rows[0] : [];
+  const dataRows = rows.slice(1);
   const targetEmail = String(counsellor.email || '').trim().toLowerCase();
 
   if (!targetEmail) {
     throw new Error('Counsellor email is required.');
   }
 
-  const existingIndex = rows.findIndex((row) => {
-    const existingEmail = row[4] ? String(row[4]).trim().toLowerCase() : '';
+  const existingIndex = dataRows.findIndex((row) => {
+    const emailIndex = getCounsellorFieldIndexes(headers).emailIndex ?? 4;
+    const existingEmail = row[emailIndex] ? String(row[emailIndex]).trim().toLowerCase() : '';
     return existingEmail === targetEmail;
   });
 
-  const existingRow = existingIndex >= 0 ? rows[existingIndex] : [];
+  const existingRow = existingIndex >= 0 ? dataRows[existingIndex] : [];
   const rowValues = buildCounsellorSheetRow(existingRow, {
     name: counsellor.name,
     email: targetEmail,
     pin: counsellor.pin,
-  });
+  }, headers);
 
   if (existingIndex >= 0) {
     const rowNumber = existingIndex + 2;
@@ -183,16 +186,21 @@ async function upsertCounsellorRecord(counsellor) {
   }
 
   await sheetAppend(SHEETS.COUNSELLORS, rowValues);
-  return { rowNumber: rows.length + 2, created: true };
+  return { rowNumber: dataRows.length + 2, created: true };
 }
 
 async function getCounsellors() {
-  const rows = await sheetRead(SHEETS.COUNSELLORS, 'A2:G200');
+  const rows = await sheetRead(SHEETS.COUNSELLORS, 'A1:G200');
+  const headers = Array.isArray(rows[0]) ? rows[0] : [];
+  const indexes = getCounsellorFieldIndexes(headers);
   const out = [];
-  for (const r of rows) {
-    const name = r[2] ? r[2].trim() : '';
-    const email = r[4] ? r[4].trim() : '';
-    const pin = r[5] ? String(r[5]).trim() : '';
+  for (const r of rows.slice(1)) {
+    const nameIndex = indexes.nameIndex ?? 2;
+    const emailIndex = indexes.emailIndex ?? 4;
+    const pinIndex = indexes.pinIndex ?? 5;
+    const name = r[nameIndex] ? String(r[nameIndex]).trim() : '';
+    const email = r[emailIndex] ? String(r[emailIndex]).trim() : '';
+    const pin = r[pinIndex] ? String(r[pinIndex]).trim() : '';
     if (name && email) {
       const counsellor = { name, email };
       if (pin) counsellor.pin = pin;
