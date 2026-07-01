@@ -6,13 +6,31 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useTheme } from '../context/ThemeContext';
+import { MAX_FILE_SIZE_BYTES } from '../constants/config';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = MAX_FILE_SIZE_BYTES; // 5MB (centralized in constants/config.jsx)
+
+// Progressive compression levels tried in order until the built PDF fits under
+// MAX_FILE_SIZE. Each level re-encodes every scanned page from its ORIGINAL
+// image (not the previously-compressed one) at a lower JPEG quality and, for
+// the more aggressive levels, a smaller max width. Re-encoding the source
+// image is what actually shrinks the file — previously the code only changed
+// CSS display hints around the same unmodified base64 data, so the exported
+// PDF size barely changed between "quality levels" and large scans almost
+// always failed with "File Too Large" even when compression should have
+// rescued them.
+const COMPRESSION_LEVELS = [
+  { quality: 0.8, maxWidth: null },   // try close to original quality first
+  { quality: 0.6, maxWidth: 1600 },
+  { quality: 0.45, maxWidth: 1200 },
+  { quality: 0.3, maxWidth: 900 },
+];
 
 // Utility function to format bytes to human-readable size
 const formatFileSize = (bytes) => {
@@ -38,13 +56,13 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
   const { colors: COLORS } = useTheme();
   const styles = createStyles(COLORS);
 
-  // multi-page scan state 
+  // ── multi-page scan state ──
   const [scanModalVisible, setScanModalVisible] = useState(false);
   const [scannedPages, setScannedPages] = useState([]);
   const [converting, setConverting] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // request camera permission
+  // ── request camera permission ──
   const ensureCameraPermission = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
@@ -54,15 +72,15 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     return true;
   };
 
-  // take one more photo (with crop)
+  // ── take one more photo (with crop) ──
   const takePage = async () => {
     if (!(await ensureCameraPermission())) return;
     try {
       const r = await ImagePicker.launchCameraAsync({
         quality: 0.85,
         base64: true,
-        allowsEditing: true,
-        aspect: [3, 4],
+        allowsEditing: true,   // ← enables built-in crop UI after each shot
+        aspect: [3, 4],        // portrait crop guide (A4-ish)
       });
       if (!r.canceled && r.assets?.[0]) {
         const a = r.assets[0];
@@ -74,7 +92,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // open scan session (first page, with crop)
+  // ── open scan session (first page, with crop) ──
   const openScanModal = async () => {
     if (!(await ensureCameraPermission())) return;
     setScannedPages([]);
@@ -83,7 +101,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       const r = await ImagePicker.launchCameraAsync({
         quality: 0.85,
         base64: true,
-        allowsEditing: true,
+        allowsEditing: true,   // enables built-in crop UI after each shot
         aspect: [3, 4],
       });
       if (!r.canceled && r.assets?.[0]) {
@@ -95,7 +113,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // sopen camera for single image (no PDF build)
+  // ── open camera for single image (no PDF build) ──
   const openCameraImage = async () => {
     if (!(await ensureCameraPermission())) return;
     try {
@@ -106,19 +124,42 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       if (!r.canceled && r.assets?.[0]) {
         const a = r.assets[0];
 
-        // Check file size after capture
-        const fileSize = await checkFileSize(a.uri);
+        // Check file size after capture — if too large, try to auto-compress
+        // before giving up, instead of just rejecting the photo outright.
+        let finalUri = a.uri;
+        let fileSize = await checkFileSize(a.uri);
+        if (fileSize && fileSize > MAX_FILE_SIZE) {
+          for (const { quality, maxWidth } of COMPRESSION_LEVELS) {
+            try {
+              const actions = maxWidth ? [{ resize: { width: maxWidth } }] : [];
+              const manipulated = await ImageManipulator.manipulateAsync(
+                a.uri,
+                actions,
+                { compress: quality, format: ImageManipulator.SaveFormat.JPEG }
+              );
+              const newSize = await checkFileSize(manipulated.uri);
+              if (!newSize || newSize <= MAX_FILE_SIZE) {
+                finalUri = manipulated.uri;
+                fileSize = newSize;
+                break;
+              }
+            } catch (compressErr) {
+              console.error('Image auto-compress error:', compressErr);
+            }
+          }
+        }
+
         if (fileSize && fileSize > MAX_FILE_SIZE) {
           Alert.alert(
             'File Too Large',
-            `Image size is ${formatFileSize(fileSize)}. Maximum allowed is ${formatFileSize(MAX_FILE_SIZE)}.`
+            `Image is ${formatFileSize(fileSize)} even after compression. Maximum allowed is ${formatFileSize(MAX_FILE_SIZE)}.`
           );
           return;
         }
 
-        const ext = a.uri.split('.').pop().toLowerCase() || 'jpg';
+        const ext = finalUri.split('.').pop().toLowerCase() || 'jpg';
         const newFile = {
-          uri: a.uri,
+          uri: finalUri,
           name: `photo_${index}_${Date.now()}.${ext}`,
           mimeType: `image/${ext === 'png' ? 'png' : 'jpeg'}`
         };
@@ -131,12 +172,12 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // remove one scanned page
+  // ── remove one scanned page ──
   const removePage = (pageIndex) => {
     setScannedPages((prev) => prev.filter((_, i) => i !== pageIndex));
   };
 
-  // build multi-page PDF and finish (with auto-compression)
+  // ── build multi-page PDF and finish (with auto-compression) ──
   const buildPDF = async () => {
     if (scannedPages.length === 0) {
       Alert.alert('No Pages', 'Please scan at least one page.');
@@ -144,21 +185,41 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
     setConverting(true);
     try {
-      // Attempt PDF generation, retrying with lower quality if file is too large
-      const qualityLevels = [0.85, 0.60, 0.40];
+      // Attempt PDF generation, actually re-compressing every page's source
+      // image at progressively lower quality/size until the built PDF fits
+      // under MAX_FILE_SIZE (see COMPRESSION_LEVELS above).
       let pdfUri = null;
       let pdfFileSize = null;
 
-      for (let qi = 0; qi < qualityLevels.length; qi++) {
-        const quality = qualityLevels[qi];
+      for (let li = 0; li < COMPRESSION_LEVELS.length; li++) {
+        const { quality, maxWidth } = COMPRESSION_LEVELS[li];
 
-        // Reuse original images on the first attempt; reduce image quality on retries to decrease file size.
-        const pageHtml = scannedPages
+        // Re-encode each page from its ORIGINAL captured uri so compression is
+        // cumulative-free (always compressing from the best available source,
+        // never re-compressing an already-compressed jpeg repeatedly).
+        const processedPages = await Promise.all(
+          scannedPages.map(async (p) => {
+            try {
+              const actions = maxWidth ? [{ resize: { width: maxWidth } }] : [];
+              const manipulated = await ImageManipulator.manipulateAsync(
+                p.uri,
+                actions,
+                { compress: quality, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+              );
+              return manipulated.base64;
+            } catch (manipErr) {
+              console.error('Image compression error, falling back to original:', manipErr);
+              return p.base64; // fall back to the originally captured base64
+            }
+          })
+        );
+
+        const pageHtml = processedPages
           .map(
-            (p, i) => `
+            (b64) => `
             <div class="page">
-              <img src="data:image/jpeg;base64,${p.base64}" />
-            </div>${i < scannedPages.length - 1 ? '<div class="break"></div>' : ''}
+              <img src="data:image/jpeg;base64,${b64}" />
+            </div>
           `
           )
           .join('');
@@ -177,13 +238,12 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
                   justify-content: center;
                   align-items: center;
                 }
+                .page:last-child { page-break-after: auto; }
                 .page img {
-                  width: ${quality < 0.70 ? '85%' : '100%'};
+                  width: 100%;
                   height: auto;
                   display: block;
-                  image-rendering: ${quality < 0.50 ? 'pixelated' : 'auto'};
                 }
-                .break { page-break-after: always; }
               </style>
             </head>
             <body>
@@ -198,25 +258,22 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
 
         if (!pdfFileSize || pdfFileSize <= MAX_FILE_SIZE) {
           // Fits within limit — use this PDF
-          if (qi > 0) {
-            console.log(`PDF compressed at quality ${quality}: ${formatFileSize(pdfFileSize)}`);
+          if (li > 0) {
+            console.log(`PDF compressed at quality ${quality} (maxWidth ${maxWidth}): ${formatFileSize(pdfFileSize)}`);
           }
           break;
         }
 
-        // Still too large — if we have more quality levels to try, continue
-        if (qi < qualityLevels.length - 1) {
-          console.log(`PDF too large at quality ${quality} (${formatFileSize(pdfFileSize)}), retrying...`);
-          pdfUri = null;
-          pdfFileSize = null;
-        }
+        console.log(`PDF too large at quality ${quality} (${formatFileSize(pdfFileSize)}), retrying with stronger compression...`);
+        pdfUri = null;
+        pdfFileSize = null;
       }
 
       // After all attempts, check final size
-      if (pdfFileSize && pdfFileSize > MAX_FILE_SIZE) {
+      if (!pdfUri || (pdfFileSize && pdfFileSize > MAX_FILE_SIZE)) {
         Alert.alert(
           'File Too Large',
-          `Even after compression, the PDF is ${formatFileSize(pdfFileSize)} (max 5 MB). Please scan fewer pages or use lower-resolution images.`
+          `Even after compression, this scan is too large to fit under the 5 MB limit. Please scan fewer pages, or scan each page separately.`
         );
         setConverting(false);
         return;
@@ -238,31 +295,64 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // pick existing PDF or Image
+  // ── pick existing PDF or Image ──
   const pickFile = async () => {
     try {
       const type = allowedFormat === 'image' ? 'image/*' : 'application/pdf';
       const r = await DocumentPicker.getDocumentAsync({
         type,
         copyToCacheDirectory: true,
-        multiple: allowedFormat === 'image',
+        multiple: allowedFormat === 'image', // Allow multiple selection for images
       });
       if (!r.canceled && r.assets && r.assets.length > 0) {
         let validAssets = [];
-        const oversizedFiles = [];
+        const stillOversizedFiles = [];
 
         for (const asset of r.assets) {
-          if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE) {
-            oversizedFiles.push(`${asset.name} (${formatFileSize(asset.fileSize)})`);
-          } else {
-            validAssets.push(asset);
+          let finalAsset = asset;
+          const size = asset.fileSize || (await checkFileSize(asset.uri));
+
+          if (size && size > MAX_FILE_SIZE) {
+            // Only images can be auto-compressed client-side; PDFs picked from
+            // files can't be safely re-compressed here without a PDF library,
+            // so those still get rejected with guidance to use the Scan option.
+            const isImage = allowedFormat === 'image' || /\.(jpe?g|png)$/i.test(asset.name || '');
+            if (isImage) {
+              try {
+                for (const { quality, maxWidth } of COMPRESSION_LEVELS) {
+                  const actions = maxWidth ? [{ resize: { width: maxWidth } }] : [];
+                  const manipulated = await ImageManipulator.manipulateAsync(
+                    asset.uri,
+                    actions,
+                    { compress: quality, format: ImageManipulator.SaveFormat.JPEG }
+                  );
+                  const newSize = await checkFileSize(manipulated.uri);
+                  if (!newSize || newSize <= MAX_FILE_SIZE) {
+                    finalAsset = { ...asset, uri: manipulated.uri, fileSize: newSize };
+                    break;
+                  }
+                }
+              } catch (compressErr) {
+                console.error('Image auto-compress error:', compressErr);
+              }
+            }
+
+            const finalSize = finalAsset.fileSize || (await checkFileSize(finalAsset.uri));
+            if (finalSize && finalSize > MAX_FILE_SIZE) {
+              stillOversizedFiles.push(
+                `${asset.name} (${formatFileSize(size)}${finalAsset !== asset ? `, compressed to ${formatFileSize(finalSize)}` : ''})`
+              );
+              continue;
+            }
           }
+
+          validAssets.push(finalAsset);
         }
 
-        if (oversizedFiles.length > 0) {
-          const msg = oversizedFiles.length === 1
-            ? `${oversizedFiles[0]} exceeds the 5 MB limit.`
-            : `${oversizedFiles.length} files exceed the 5 MB limit:\n\n${oversizedFiles.join('\n')}`;
+        if (stillOversizedFiles.length > 0) {
+          const msg = stillOversizedFiles.length === 1
+            ? `${stillOversizedFiles[0]} exceeds the 5 MB limit, even after compression. Please use a lower-resolution photo or use the Scan option instead.`
+            : `${stillOversizedFiles.length} files exceed the 5 MB limit, even after compression:\n\n${stillOversizedFiles.join('\n')}\n\nPlease use lower-resolution photos or the Scan option instead.`;
           Alert.alert('File Too Large', msg);
         }
 
@@ -281,7 +371,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // open/preview file
+  // ── open/preview file ──
   const previewFile = async (fileToPreview) => {
     if (!fileToPreview?.uri) {
       Alert.alert('Error', 'No file to preview');
@@ -289,15 +379,32 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
     setPreviewLoading(true);
     try {
-      const available = await Sharing.isAvailableAsync();
-      if (!available) {
-        Alert.alert('Preview Unavailable', 'No viewer found on this device.');
-        return;
+      const isPdf =
+        fileToPreview.mimeType === 'application/pdf' ||
+        /\.pdf$/i.test(fileToPreview.name || fileToPreview.uri || '');
+
+      if (isPdf) {
+        // Use expo-print's native print-preview to render the PDF instead of
+        // routing through the OS "share" sheet. Sharing.shareAsync hands the
+        // file off to whatever app the person picks, and on many devices that
+        // resulted in the "opens empty"/blank preview being reported — either
+        // because no installed app could render a raw PDF, or the picked app
+        // couldn't read the freshly-created cache file. Print.printAsync opens
+        // the OS's own PDF renderer directly on the file and reliably shows
+        // EVERY page (fixing the "multi-page PDF not working" preview too),
+        // without depending on any third-party app being installed.
+        await Print.printAsync({ uri: fileToPreview.uri });
+      } else {
+        const available = await Sharing.isAvailableAsync();
+        if (!available) {
+          Alert.alert('Preview Unavailable', 'No viewer found on this device.');
+          return;
+        }
+        await Sharing.shareAsync(fileToPreview.uri, {
+          mimeType: fileToPreview.mimeType || 'image/jpeg',
+          dialogTitle: 'Preview File',
+        });
       }
-      await Sharing.shareAsync(fileToPreview.uri, {
-        mimeType: fileToPreview.mimeType || (allowedFormat === 'image' ? 'image/jpeg' : 'application/pdf'),
-        dialogTitle: 'Preview File',
-      });
     } catch (err) {
       console.error('Error previewing file:', err);
       Alert.alert('Preview Error', 'Failed to open file. Please try again.');
@@ -308,7 +415,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
 
   const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
 
-  // render
+  // ── render ──
   return (
     <View style={[styles.box, fileArray.length > 0 && styles.boxDone]}>
       <View style={styles.labelRow}>
