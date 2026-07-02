@@ -236,15 +236,15 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
             <head>
               <style>
                 @page { size: A4 portrait; margin: 0; }
-                html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
-                body { background: white; }
+                html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 100%; }
+                body { background: white; margin: 0 !important; padding: 0 !important; }
                 .page {
                   width: 100%;
                   height: 100vh;
                   display: flex;
                   justify-content: center;
                   align-items: center;
-                  margin: 0;
+                  margin: 0 !important;
                   padding: 0 !important;
                   box-sizing: border-box;
                   overflow: hidden;
