@@ -126,22 +126,22 @@ async function sheetRead(tab, range = 'A1:Z5000') {
   return res.data.values || [];
 }
 
-async function sheetAppend(tab, row) {
+async function sheetAppend(tab, row, valueInputOption = 'RAW') {
   const sheets = await getSheetsService();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${tab}!A1`,
-    valueInputOption: 'RAW',
+    valueInputOption,
     requestBody: { values: [row] },
   });
 }
 
-async function sheetUpdateRow(tab, rowNumber, row) {
+async function sheetUpdateRow(tab, rowNumber, row, valueInputOption = 'RAW') {
   const sheets = await getSheetsService();
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
     range: `${tab}!A${rowNumber}`,
-    valueInputOption: 'RAW',
+    valueInputOption,
     requestBody: { values: [row] },
   });
 }
