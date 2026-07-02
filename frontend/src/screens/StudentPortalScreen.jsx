@@ -4,6 +4,7 @@ import {
   Modal, Linking, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TopBar from '../components/TopBar';
 import CardHeader from '../components/CardHeader';
@@ -13,6 +14,7 @@ import UploadBox from '../components/UploadBox';
 import {
   getStudentTokenInfo, submitDocuments,
 } from '../services/api';
+import { MAX_FILE_SIZE_BYTES } from '../constants/config';
 import { useTheme } from '../context/ThemeContext';
 
 const PHASE = { LOAD: 0, UPLOAD: 1, DONE: 2, ERROR: 3 };
@@ -94,6 +96,38 @@ export default function StudentPortalScreen({ navigation, route }) {
     return missing;
   };
 
+  const formatFileSize = (bytes) => {
+    if (!bytes || bytes <= 0) return '0 KB';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+    return `${(bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
+  };
+
+  const validateFilesBeforeSubmit = async (filesToCheck) => {
+    const oversized = [];
+
+    for (const file of filesToCheck) {
+      if (!file?.uri) continue;
+
+      let size = file.fileSize || file.size;
+      if (!size) {
+        try {
+          const info = await FileSystem.getInfoAsync(file.uri);
+          size = info?.size || 0;
+        } catch (err) {
+          console.error('Could not read file size:', err);
+        }
+      }
+
+      if (size && size > MAX_FILE_SIZE_BYTES) {
+        oversized.push({ name: file.name || 'document', size });
+      }
+    }
+
+    return oversized;
+  };
+
   const submitUploads = async () => {
     setShowPartialWarning(false);
     setLoading(true);
@@ -102,6 +136,7 @@ export default function StudentPortalScreen({ navigation, route }) {
     try {
       const fileArr = [];
       const labels = [];
+      const allFilesToCheck = [];
 
       // Build file array indexed by missingDocs order
       missingDocs.forEach((label, i) => {
@@ -120,12 +155,24 @@ export default function StudentPortalScreen({ navigation, route }) {
 
         fileArr.push(fArray.length > 1 ? processedArray : processedArray[0]);
         labels.push(label);
+        allFilesToCheck.push(...processedArray);
       });
 
       let finalAgreement = agreementFile;
       if (agreementFile) {
         const ext = agreementFile.name.split('.').pop();
         finalAgreement = { ...agreementFile, name: `${data.cf_number}_Agreement.${ext}` };
+        allFilesToCheck.push(finalAgreement);
+      }
+
+      const oversizedFiles = await validateFilesBeforeSubmit(allFilesToCheck);
+      if (oversizedFiles.length > 0) {
+        const details = oversizedFiles.map((f) => `${f.name} (${formatFileSize(f.size)})`).join('\n');
+        Alert.alert(
+          'File Too Large',
+          `The following files exceed the 5 MB limit:\n\n${details}\n\nPlease choose smaller files or compress them before submitting.`
+        );
+        return;
       }
 
       const res = await submitDocuments(token, fileArr, labels, finalAgreement);

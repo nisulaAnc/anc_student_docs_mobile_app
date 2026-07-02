@@ -5,7 +5,6 @@ const PORT = 5000;
 
 export const API_BASE_URL = `http://${LOCAL_IP}:${PORT}/api`;
 
-// Centralized upload size limit — must stay in sync with backend/middleware/upload.js
 // (limits.fileSize) so the client-side check and the server-side rejection agree.
 export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 

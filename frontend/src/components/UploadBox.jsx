@@ -7,9 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Print from 'expo-print';
 import { useTheme } from '../context/ThemeContext';
 import { MAX_FILE_SIZE_BYTES } from '../constants/config';
 
@@ -190,6 +190,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       // under MAX_FILE_SIZE (see COMPRESSION_LEVELS above).
       let pdfUri = null;
       let pdfFileSize = null;
+      let finalValidPages = [];
 
       for (let li = 0; li < COMPRESSION_LEVELS.length; li++) {
         const { quality, maxWidth } = COMPRESSION_LEVELS[li];
@@ -214,35 +215,56 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
           })
         );
 
-        const pageHtml = processedPages
-          .map(
-            (b64) => `
+        const validPages = processedPages.filter((b64) => typeof b64 === 'string' && b64.trim().length > 0);
+
+        if (validPages.length === 0) {
+          Alert.alert('No Pages', 'No valid scanned images were found to build the PDF.');
+          setConverting(false);
+          return;
+        }
+
+        const pageHtml = validPages
+          .map((b64, index) => `
             <div class="page">
               <img src="data:image/jpeg;base64,${b64}" />
             </div>
-          `
-          )
+          `)
           .join('');
 
         const html = `
           <html>
             <head>
               <style>
-                @page { margin: 0; }
-                * { box-sizing: border-box; margin: 0; padding: 0; }
+                @page { size: A4 portrait; margin: 0; }
+                html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
                 body { background: white; }
                 .page {
                   width: 100%;
-                  page-break-after: always;
+                  height: 100vh;
                   display: flex;
                   justify-content: center;
                   align-items: center;
+                  margin: 0;
+                  padding: 0 !important;
+                  box-sizing: border-box;
+                  overflow: hidden;
+                  break-after: page;
+                  page-break-after: always;
+                  page-break-inside: avoid;
                 }
-                .page:last-child { page-break-after: auto; }
+                .page:last-child {
+                  break-after: auto;
+                  page-break-after: auto;
+                }
                 .page img {
+                  max-width: 100%;
+                  max-height: 100%;
                   width: 100%;
-                  height: auto;
+                  height: 100%;
+                  margin: 0;
+                  padding: 0;
                   display: block;
+                  object-fit: contain;
                 }
               </style>
             </head>
@@ -279,7 +301,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
         return;
       }
 
-      const pageCount = scannedPages.length;
+      const pageCount = finalValidPages.length;
       setScanModalVisible(false);
       setScannedPages([]);
       onFile(index, {
@@ -351,8 +373,8 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
 
         if (stillOversizedFiles.length > 0) {
           const msg = stillOversizedFiles.length === 1
-            ? `${stillOversizedFiles[0]} exceeds the 5 MB limit, even after compression. Please use a lower-resolution photo or use the Scan option instead.`
-            : `${stillOversizedFiles.length} files exceed the 5 MB limit, even after compression:\n\n${stillOversizedFiles.join('\n')}\n\nPlease use lower-resolution photos or the Scan option instead.`;
+            ? `${stillOversizedFiles[0]} exceeds the 5 MB limit. Please choose a smaller file or use the Scan option instead.`
+            : `${stillOversizedFiles.length} files exceed the 5 MB limit:\n\n${stillOversizedFiles.join('\n')}\n\nPlease choose smaller files or use the Scan option instead.`;
           Alert.alert('File Too Large', msg);
         }
 
@@ -382,28 +404,23 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       const isPdf =
         fileToPreview.mimeType === 'application/pdf' ||
         /\.pdf$/i.test(fileToPreview.name || fileToPreview.uri || '');
+      const isImage =
+        fileToPreview.mimeType?.startsWith('image/') ||
+        /\.(jpe?g|png)$/i.test(fileToPreview.name || fileToPreview.uri || '');
 
-      if (isPdf) {
-        // Use expo-print's native print-preview to render the PDF instead of
-        // routing through the OS "share" sheet. Sharing.shareAsync hands the
-        // file off to whatever app the person picks, and on many devices that
-        // resulted in the "opens empty"/blank preview being reported — either
-        // because no installed app could render a raw PDF, or the picked app
-        // couldn't read the freshly-created cache file. Print.printAsync opens
-        // the OS's own PDF renderer directly on the file and reliably shows
-        // EVERY page (fixing the "multi-page PDF not working" preview too),
-        // without depending on any third-party app being installed.
-        await Print.printAsync({ uri: fileToPreview.uri });
-      } else {
+      if (isPdf || isImage) {
         const available = await Sharing.isAvailableAsync();
         if (!available) {
-          Alert.alert('Preview Unavailable', 'No viewer found on this device.');
+          Alert.alert('Preview Unavailable', 'No compatible viewer was found on this device.');
           return;
         }
+
         await Sharing.shareAsync(fileToPreview.uri, {
-          mimeType: fileToPreview.mimeType || 'image/jpeg',
-          dialogTitle: 'Preview File',
+          mimeType: isPdf ? 'application/pdf' : (fileToPreview.mimeType || 'image/*'),
+          dialogTitle: isPdf ? 'Open PDF' : 'Open Image',
         });
+      } else {
+        Alert.alert('Preview Unavailable', 'Preview is available for PDF and JPG/PNG image files only.');
       }
     } catch (err) {
       console.error('Error previewing file:', err);
