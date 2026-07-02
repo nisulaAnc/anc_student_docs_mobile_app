@@ -1,7 +1,7 @@
 const StudentToken = require('../models/StudentToken');
 const Submission = require('../models/Submission');
 const { getDocumentsForProduct } = require('../utils/productDocuments');
-const { sheetAppend, SHEETS, getCounsellors, uploadFileToDrive, SUBMISSION_DOC_COLUMNS } = require('../config/googleSheets');
+const { sheetAppend, sheetUpdateRow, sheetRead, SHEETS, getCounsellors, uploadFileToDrive, SUBMISSION_DOC_COLUMNS } = require('../config/googleSheets');
 const { sendEmail, emailHtml } = require('../utils/email');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
@@ -59,6 +59,26 @@ const getStudentTokenInfo = async (req, res) => {
       missing_documents,
     },
   });
+};
+
+const escapeSheetFormulaValue = (value = '') => String(value).replace(/"/g, '""');
+
+const buildSheetHyperlink = (url, label) => {
+  if (!url) return '';
+  const safeUrl = escapeSheetFormulaValue(url);
+  const safeLabel = escapeSheetFormulaValue(label || 'Open file');
+  return `=HYPERLINK("${safeUrl}","${safeLabel}")`;
+};
+
+const findSubmissionSheetRow = async (token, cfNumber) => {
+  const rows = await sheetRead(SHEETS.SUBMISSIONS, 'A1:Z5000');
+  for (let i = 1; i < rows.length; i += 1) {
+    const row = rows[i] || [];
+    if (row[1] === token || row[2] === cfNumber) {
+      return i + 1;
+    }
+  }
+  return null;
 };
 
 // POST /api/student/submit-documents
@@ -180,46 +200,52 @@ const submitDocuments = async (req, res) => {
     await submission.save();
   }
 
-  // 10. Sync to Google Sheet ONLY for complete submissions
-  // This prevents a partial row being written and then a duplicate row
-  // being written later when all docs are submitted.
-  if (isComplete) {
-    try {
-      const docRow = new Array(SUBMISSION_DOC_COLUMNS.length).fill('');
+  // 10. Sync current submission state to Google Sheet for both partial and complete uploads.
+  // Each submission attempt updates the matching row so the sheet reflects the latest uploaded files.
+  try {
+    const docRow = new Array(SUBMISSION_DOC_COLUMNS.length).fill('');
 
-      // Build the full merged doc list (existing + newly uploaded) for sheet sync
-      const allDocsForSheet = submission.documents || [];
-      for (const doc of allDocsForSheet) {
-        // Normalize both sides: trim whitespace and compare case-insensitively
-        const colIdx = SUBMISSION_DOC_COLUMNS.findIndex(
-          (col) => col.trim().toLowerCase() === (doc.label || '').trim().toLowerCase()
-        );
-        if (colIdx !== -1) {
-          docRow[colIdx] = doc.cloudinary_url || '';
-        }
+    // Build the full merged doc list (existing + newly uploaded) for sheet sync.
+    const allDocsForSheet = submission.documents || [];
+    for (const doc of allDocsForSheet) {
+      const colIdx = SUBMISSION_DOC_COLUMNS.findIndex(
+        (col) => col.trim().toLowerCase() === (doc.label || '').trim().toLowerCase()
+      );
+      if (colIdx !== -1) {
+        docRow[colIdx] = buildSheetHyperlink(doc.cloudinary_url || '', doc.file_name || doc.label || 'Document');
       }
-
-      // Resolve agreement URL from current submission (merged)
-      const finalAgreementUrl = submission.agreement_url || agreementCloudinaryUrl || '';
-
-      const sheetRow = [
-        new Date().toISOString(),
-        token,
-        studentToken.cf_number,
-        studentToken.student_name,
-        studentToken.student_email,
-        studentToken.program,
-        studentToken.degree_description || '',
-        studentToken.product_code,
-        ...docRow,
-        finalAgreementUrl,
-      ];
-      await sheetAppend(SHEETS.SUBMISSIONS, sheetRow);
-      submission.synced_to_sheet = true;
-      await submission.save();
-    } catch (err) {
-      console.error('Sheet sync error (Submission):', err.message);
     }
+
+    const finalAgreementUrl = submission.agreement_url || agreementCloudinaryUrl || '';
+    const agreementLabel = agreementFile?.originalname || agreementFile?.filename || 'Signed Agreement';
+    const finalAgreementCell = finalAgreementUrl
+      ? buildSheetHyperlink(finalAgreementUrl, agreementLabel || 'Signed Agreement')
+      : '';
+
+    const sheetRow = [
+      new Date().toISOString(),
+      token,
+      studentToken.cf_number,
+      studentToken.student_name,
+      studentToken.student_email,
+      studentToken.program,
+      studentToken.degree_description || '',
+      studentToken.product_code,
+      ...docRow,
+      finalAgreementCell,
+    ];
+
+    const existingRowNumber = await findSubmissionSheetRow(token, studentToken.cf_number);
+    if (existingRowNumber) {
+      await sheetUpdateRow(SHEETS.SUBMISSIONS, existingRowNumber, sheetRow, 'USER_ENTERED');
+    } else {
+      await sheetAppend(SHEETS.SUBMISSIONS, sheetRow, 'USER_ENTERED');
+    }
+
+    submission.synced_to_sheet = true;
+    await submission.save();
+  } catch (err) {
+    console.error('Sheet sync error (Submission):', err.message);
   }
 
   // 11. EMAIL NOTIFICATIONS
