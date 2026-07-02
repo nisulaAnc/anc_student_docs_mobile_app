@@ -5,6 +5,7 @@ const { sheetAppend, sheetUpdateRow, sheetRead, SHEETS, getCounsellors, uploadFi
 const { sendEmail, emailHtml } = require('../utils/email');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
+const { buildUploadFileName } = require('../utils/uploadNaming');
 
 // Configure Cloudinary
 cloudinary.config({
@@ -133,10 +134,11 @@ const submitDocuments = async (req, res) => {
     const index = parseInt(file.fieldname.replace('doc_', ''), 10);
     const label = docLabels[index] || requiredDocs[index] || file.fieldname;
 
+    const fileName = buildUploadFileName(studentToken.cf_number, label, file.originalname || file.filename, 'pdf');
     uploadedDocs.push({
       label,
       cloudinary_url: file.path || file.secure_url,
-      file_name: file.filename || file.originalname,
+      file_name: fileName,
       public_id: file.public_id,
     });
   }
@@ -217,7 +219,7 @@ const submitDocuments = async (req, res) => {
     }
 
     const finalAgreementUrl = submission.agreement_url || agreementCloudinaryUrl || '';
-    const agreementLabel = agreementFile?.originalname || agreementFile?.filename || 'Signed Agreement';
+    const agreementLabel = buildUploadFileName(studentToken.cf_number, 'Agreement', agreementFile?.originalname || agreementFile?.filename || 'signed_agreement.pdf', 'pdf');
     const finalAgreementCell = finalAgreementUrl
       ? buildSheetHyperlink(finalAgreementUrl, agreementLabel || 'Signed Agreement')
       : '';

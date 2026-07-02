@@ -2,6 +2,7 @@ const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('cloudinary').v2;
 const StudentToken = require('../models/StudentToken');
+const { buildUploadFileName } = require('../utils/uploadNaming');
 
 // Configure Cloudinary
 cloudinary.config({
@@ -62,12 +63,8 @@ const storage = new CloudinaryStorage({
         } catch (e) { }
       }
 
-      const safeDocName = docName.replace(/[^a-zA-Z0-9.\- ]/g, '').trim().replace(/\s+/g, '_');
       const ext = file.originalname.split('.').pop();
-
-      // Cloudinary will treat this exactly as requested, e.g., CFN-56432_passport_size_photograph
-      // In 'auto' mode, Cloudinary automatically appends the correct extension (.png, .jpg, .pdf)
-      return `${cfNumber}_${safeDocName}`;
+      return buildUploadFileName(cfNumber, docName, file.originalname, ext || 'pdf');
     },
   },
 });
