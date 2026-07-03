@@ -16,17 +16,11 @@ import { MAX_FILE_SIZE_BYTES } from '../constants/config';
 const { width: SCREEN_W } = Dimensions.get('window');
 const MAX_FILE_SIZE = MAX_FILE_SIZE_BYTES; // 5MB (centralized in constants/config.jsx)
 
-// Progressive compression levels tried in order until the built PDF fits under
-// MAX_FILE_SIZE. Each level re-encodes every scanned page from its ORIGINAL
-// image (not the previously-compressed one) at a lower JPEG quality and, for
-// the more aggressive levels, a smaller max width. Re-encoding the source
-// image is what actually shrinks the file — previously the code only changed
-// CSS display hints around the same unmodified base64 data, so the exported
-// PDF size barely changed between "quality levels" and large scans almost
-// always failed with "File Too Large" even when compression should have
-// rescued them.
+// Tries multiple compression levels until the PDF is under MAX_FILE_SIZE.
+// Each level recompresses the original scanned images with lower JPEG quality
+// and reduced width to effectively reduce the final PDF size.
 const COMPRESSION_LEVELS = [
-  { quality: 0.8, maxWidth: null },   // try close to original quality first
+  { quality: 0.8, maxWidth: null },   
   { quality: 0.6, maxWidth: 1600 },
   { quality: 0.45, maxWidth: 1200 },
   { quality: 0.3, maxWidth: 900 },
@@ -56,13 +50,13 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
   const { colors: COLORS } = useTheme();
   const styles = createStyles(COLORS);
 
-  // ── multi-page scan state ──
+  // multi-page scan state
   const [scanModalVisible, setScanModalVisible] = useState(false);
   const [scannedPages, setScannedPages] = useState([]);
   const [converting, setConverting] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // ── request camera permission ──
+  // request camera permission
   const ensureCameraPermission = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
@@ -72,14 +66,14 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     return true;
   };
 
-  // ── take one more photo (with crop) ──
+  // take one more photo (with crop)
   const takePage = async () => {
     if (!(await ensureCameraPermission())) return;
     try {
       const r = await ImagePicker.launchCameraAsync({
         quality: 0.85,
         base64: true,
-        allowsEditing: true,   // ← enables built-in crop UI after each shot
+        allowsEditing: true,
         aspect: [3, 4],        // portrait crop guide (A4-ish)
       });
       if (!r.canceled && r.assets?.[0]) {
@@ -92,7 +86,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // ── open scan session (first page, with crop) ──
+  // open scan session (first page, with crop)
   const openScanModal = async () => {
     if (!(await ensureCameraPermission())) return;
     setScannedPages([]);
@@ -101,7 +95,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       const r = await ImagePicker.launchCameraAsync({
         quality: 0.85,
         base64: true,
-        allowsEditing: true,   // enables built-in crop UI after each shot
+        allowsEditing: true, 
         aspect: [3, 4],
       });
       if (!r.canceled && r.assets?.[0]) {
@@ -113,7 +107,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // ── open camera for single image (no PDF build) ──
+  // open camera for single image (no PDF build)
   const openCameraImage = async () => {
     if (!(await ensureCameraPermission())) return;
     try {
@@ -172,12 +166,12 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // ── remove one scanned page ──
+  // remove one scanned page
   const removePage = (pageIndex) => {
     setScannedPages((prev) => prev.filter((_, i) => i !== pageIndex));
   };
 
-  // ── build multi-page PDF and finish (with auto-compression) ──
+  // build multi-page PDF and finish (with auto-compression)
   const buildPDF = async () => {
     if (scannedPages.length === 0) {
       Alert.alert('No Pages', 'Please scan at least one page.');
@@ -185,9 +179,8 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
     setConverting(true);
     try {
-      // Attempt PDF generation, actually re-compressing every page's source
-      // image at progressively lower quality/size until the built PDF fits
-      // under MAX_FILE_SIZE (see COMPRESSION_LEVELS above).
+      // Generates the PDF by progressively recompressing page images
+      // until the file size is below MAX_FILE_SIZE.
       let pdfUri = null;
       let pdfFileSize = null;
       let finalValidPages = [];
@@ -195,9 +188,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       for (let li = 0; li < COMPRESSION_LEVELS.length; li++) {
         const { quality, maxWidth } = COMPRESSION_LEVELS[li];
 
-        // Re-encode each page from its ORIGINAL captured uri so compression is
-        // cumulative-free (always compressing from the best available source,
-        // never re-compressing an already-compressed jpeg repeatedly).
+        // Re-encodes each page from the original image to avoid quality loss.
         const processedPages = await Promise.all(
           scannedPages.map(async (p) => {
             try {
@@ -210,7 +201,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
               return manipulated.base64;
             } catch (manipErr) {
               console.error('Image compression error, falling back to original:', manipErr);
-              return p.base64; // fall back to the originally captured base64
+              return p.base64;
             }
           })
         );
@@ -317,14 +308,14 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // ── pick existing PDF or Image ──
+  // pick existing PDF or Image
   const pickFile = async () => {
     try {
       const type = allowedFormat === 'image' ? 'image/*' : 'application/pdf';
       const r = await DocumentPicker.getDocumentAsync({
         type,
         copyToCacheDirectory: true,
-        multiple: allowedFormat === 'image', // Allow multiple selection for images
+        multiple: allowedFormat === 'image',
       });
       if (!r.canceled && r.assets && r.assets.length > 0) {
         let validAssets = [];
@@ -335,9 +326,8 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
           const size = asset.fileSize || (await checkFileSize(asset.uri));
 
           if (size && size > MAX_FILE_SIZE) {
-            // Only images can be auto-compressed client-side; PDFs picked from
-            // files can't be safely re-compressed here without a PDF library,
-            // so those still get rejected with guidance to use the Scan option.
+            // Only images can be compressed here. PDFs cannot be recompressed,
+            // so users are prompted to use the Scan option instead.
             const isImage = allowedFormat === 'image' || /\.(jpe?g|png)$/i.test(asset.name || '');
             if (isImage) {
               try {
@@ -393,7 +383,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
     }
   };
 
-  // ── open/preview file ──
+  // open/preview file
   const previewFile = async (fileToPreview) => {
     if (!fileToPreview?.uri) {
       Alert.alert('Error', 'No file to preview');
@@ -432,7 +422,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
 
   const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
 
-  // ── render ──
+  // render
   return (
     <View style={[styles.box, fileArray.length > 0 && styles.boxDone]}>
       <View style={styles.labelRow}>

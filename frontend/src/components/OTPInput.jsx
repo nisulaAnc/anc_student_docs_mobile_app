@@ -75,13 +75,13 @@ export default function OTPInput({ value = '', onChange, error, length = 6 }) {
 
 const { width } = Dimensions.get('window');
 const GAP_SIZE = 8;
-const SIDE_PADDING = 40; // Total padding around the row
-const MAX_BOX_WIDTH = 46; // Maximum width for larger screens
+const SIDE_PADDING = 40; 
+const MAX_BOX_WIDTH = 46; 
 
 // Calculate dynamic box size: (screenWidth - padding - gaps) / 6
 const boxWidth = Math.min(MAX_BOX_WIDTH, Math.floor((width - SIDE_PADDING - (GAP_SIZE * 5)) / 6));
-const boxHeight = boxWidth * 1.25; // Keep proportional height
-const fontSize = Math.floor(boxWidth * 0.55); // Keep font size proportional
+const boxHeight = boxWidth * 1.25; 
+const fontSize = Math.floor(boxWidth * 0.55); 
 
 const styles = StyleSheet.create({
   row: {

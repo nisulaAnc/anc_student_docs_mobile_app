@@ -87,7 +87,7 @@ export default function HomeScreen({ navigation }) {
       type: 'cf',
     },
     {
-      screen: 'CFDashboard', // Routes to filtered dashboard
+      screen: 'CFDashboard', 
       params: {},
       icon: 'people',
       color: '#EC4899',
@@ -689,10 +689,8 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.pinCancelTxt}>Cancel</Text>
             </TouchableOpacity>
 
-            {/* "Forgot PIN?" only applies to the Counsellor flow — counsellor PINs are
-                per-person and individually resettable. The CF Registration / CF Portal
-                Dashboard PIN is a single shared staff PIN with no per-user reset, so
-                showing "Forgot PIN?" there made no sense and was removed. */}
+            {/* "Forgot PIN?" is only for Counsellors because each has an individual PIN.
+                  It was removed from the CF Portal since it uses a shared staff PIN. */}
             {isCounsellorFlow && (
               <TouchableOpacity
                 style={styles.pinCancelBtn}

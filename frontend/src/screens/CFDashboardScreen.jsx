@@ -92,7 +92,7 @@ export default function CFDashboardScreen({ navigation, route }) {
       const res = await sendPendingReminder(student.token);
       if (res.data?.success) {
         Alert.alert(
-          '✅ Reminder Sent',
+          'Reminder Sent',
           `A pending document reminder email has been successfully sent to ${student.student_name} at ${student.student_email}.`
         );
       } else {
