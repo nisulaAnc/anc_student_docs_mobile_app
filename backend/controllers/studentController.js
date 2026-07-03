@@ -64,9 +64,30 @@ const getStudentTokenInfo = async (req, res) => {
 
 const escapeSheetFormulaValue = (value = '') => String(value).replace(/"/g, '""');
 
-const buildSheetHyperlink = (url, label) => {
-  if (!url) return '';
-  const safeUrl = escapeSheetFormulaValue(url);
+const buildCloudinaryDownloadUrl = (url = '', publicId = '', fileName = '') => {
+  if (publicId) {
+    const ext = String(fileName).split('.').pop().toLowerCase();
+    const resourceType = ['pdf', 'doc', 'docx'].includes(ext) ? 'raw' : 'image';
+    const publicIdWithoutExt = publicId.replace(/\.[^.]+$/, '');
+    const options = {
+      secure: true,
+      resource_type: resourceType,
+      flags: 'attachment',
+    };
+    return cloudinary.url(publicIdWithoutExt, options);
+  }
+
+  if (!url || !url.includes('/upload/')) return url;
+  const [base, query = ''] = url.split('?');
+  if (base.includes('/upload/fl_attachment')) return url;
+  const downloadBase = base.replace(/\/upload\/(?!fl_attachment)/, '/upload/fl_attachment/');
+  return query ? `${downloadBase}?${query}` : downloadBase;
+};
+
+const buildSheetHyperlink = (url, label, publicId, fileName) => {
+  if (!url && !publicId) return '';
+  const downloadUrl = buildCloudinaryDownloadUrl(url, publicId, fileName);
+  const safeUrl = escapeSheetFormulaValue(downloadUrl);
   const safeLabel = escapeSheetFormulaValue(label || 'Open file');
   return `=HYPERLINK("${safeUrl}","${safeLabel}")`;
 };
@@ -137,7 +158,7 @@ const submitDocuments = async (req, res) => {
     const fileName = buildUploadFileName(studentToken.cf_number, label, file.originalname || file.filename, 'pdf');
     uploadedDocs.push({
       label,
-      cloudinary_url: file.path || file.secure_url,
+      cloudinary_url: file.secure_url || file.path,
       file_name: fileName,
       public_id: file.public_id,
     });
@@ -148,7 +169,7 @@ const submitDocuments = async (req, res) => {
   let agreementPublicId = '';
   const agreementFile = uploadedFiles.find((file) => file.fieldname === 'agreement');
   if (agreementFile) {
-    agreementCloudinaryUrl = agreementFile.path || agreementFile.secure_url;
+    agreementCloudinaryUrl = agreementFile.secure_url || agreementFile.path;
     agreementPublicId = agreementFile.public_id;
   }
 
@@ -214,14 +235,24 @@ const submitDocuments = async (req, res) => {
         (col) => col.trim().toLowerCase() === (doc.label || '').trim().toLowerCase()
       );
       if (colIdx !== -1) {
-        docRow[colIdx] = buildSheetHyperlink(doc.cloudinary_url || '', doc.file_name || doc.label || 'Document');
+        docRow[colIdx] = buildSheetHyperlink(
+          doc.cloudinary_url || '',
+          doc.file_name || doc.label || 'Document',
+          doc.public_id,
+          doc.file_name || doc.label || 'Document'
+        );
       }
     }
 
     const finalAgreementUrl = submission.agreement_url || agreementCloudinaryUrl || '';
     const agreementLabel = buildUploadFileName(studentToken.cf_number, 'Agreement', agreementFile?.originalname || agreementFile?.filename || 'signed_agreement.pdf', 'pdf');
     const finalAgreementCell = finalAgreementUrl
-      ? buildSheetHyperlink(finalAgreementUrl, agreementLabel || 'Signed Agreement')
+      ? buildSheetHyperlink(
+          finalAgreementUrl,
+          agreementLabel || 'Signed Agreement',
+          agreementPublicId,
+          agreementLabel || 'Signed Agreement.pdf'
+        )
       : '';
 
     const sheetRow = [
@@ -254,17 +285,16 @@ const submitDocuments = async (req, res) => {
 
   if (!isComplete) {
     // INCOMPLETE: Send "missing documents" warning to student
-    const missingDocs = [];
-    const uploadedLabels = uploadedDocs.map((d) => d.label.toLowerCase());
-    for (const docName of requiredDocs) {
-      if (!uploadedLabels.includes(docName.toLowerCase())) {
-        missingDocs.push(docName);
-      }
-    }
-    if (!agreementCloudinaryUrl) missingDocs.push('Agreement (signed)');
+    const allUploadedLabels = (submission.documents || []).map((d) => String(d.label || '').trim()).filter(Boolean);
+    const uploadedList = allUploadedLabels.map((label) => `<li>${label}</li>`).join('');
+    const receivedCount = allUploadedLabels.length + (submission.agreement_url ? 1 : 0);
+
+    const missingDocs = requiredDocs.filter(
+      (docName) => !allUploadedLabels.some((uploadedLabel) => uploadedLabel.toLowerCase() === docName.toLowerCase())
+    );
+    if (!submission.agreement_url) missingDocs.push('Agreement (signed)');
 
     const missingList = missingDocs.map((d) => `<li>${d}</li>`).join('');
-    const uploadedList = uploadedDocs.map((d) => `<li>${d.label}</li>`).join('');
 
     const incompleteStudentHtml = emailHtml(
       'Action Required – Missing Documents',
@@ -274,8 +304,8 @@ const submitDocuments = async (req, res) => {
         <strong style="color:#DC2626;">incomplete</strong>. Please upload the remaining
         documents and re-submit as soon as possible to avoid delays in your registration.
       </p>
-      ${uploadedList ? `<p style="font-size:14px;font-weight:700;color:#0A2463;margin:16px 0 6px;">Documents Received (${uploadedDocs.length}):</p>
-      <ul style="color:#16A34A;font-size:14px;line-height:2;">${uploadedList}</ul>` : ''}
+      ${uploadedList ? `<p style="font-size:14px;font-weight:700;color:#0A2463;margin:16px 0 6px;">Documents Received (${receivedCount}):</p>
+      <ul style="color:#16A34A;font-size:14px;line-height:2;">${uploadedList}${submission.agreement_url ? '<li>Agreement (signed)</li>' : ''}</ul>` : submission.agreement_url ? '<p style="font-size:14px;font-weight:700;color:#0A2463;margin:16px 0 6px;">Agreement Received</p>' : ''}
       <p style="font-size:14px;font-weight:700;color:#DC2626;margin:16px 0 6px;">
         Missing Documents (${missingDocs.length}):
       </p>
@@ -303,13 +333,14 @@ const submitDocuments = async (req, res) => {
         (c) => c.name.toLowerCase() === studentToken.counsellor_name.toLowerCase()
       );
       if (counsellor?.email) {
+        const mergedUploadedCount = (submission.documents || []).length + (submission.agreement_url ? 1 : 0);
         const counsellorAlertHtml = emailHtml(
           'Incomplete Student Submission – Action Required',
           `<p style="font-size:15px;color:#334155;line-height:1.7;">
             Dear <strong>${studentToken.counsellor_name}</strong>,<br><br>
             Your student <strong>${studentToken.student_name}</strong>
             (CF: ${studentToken.cf_number}) has submitted only
-            <strong>${uploadedDocs.length} of ${totalRequired}</strong> required documents.
+            <strong>${mergedUploadedCount} of ${totalRequired}</strong> required documents.
             The submission is marked <strong style="color:#DC2626;">incomplete</strong>.
           </p>
           <p style="font-size:14px;font-weight:700;color:#DC2626;margin:16px 0 6px;">Missing Documents:</p>

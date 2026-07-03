@@ -180,12 +180,19 @@ const getDashboardStats = async (req, res) => {
       filter.counsellor_name = { $regex: new RegExp('^' + counsellor_name.trim() + '$', 'i') };
     }
 
-    // 1. Total student tokens registered (applying filter if present)
-    const totalStudents = await StudentToken.countDocuments(filter);
+    // 1. Filtered student tokens registered for this dashboard view
+    const studentTokens = await StudentToken.find(filter);
+    const totalStudents = studentTokens.length;
+    const studentTokenValues = studentTokens.map((token) => token.token);
 
-    // 2. Submissions
-    const submissions = await Submission.find();
-    const totalUploadedDocuments = submissions.reduce((acc, sub) => acc + (sub.documents?.length || 0) + (sub.agreement_url ? 1 : 0), 0);
+    // 2. Submissions only for the filtered student tokens
+    const submissions = studentTokenValues.length
+      ? await Submission.find({ token: { $in: studentTokenValues } })
+      : [];
+    const totalUploadedDocuments = submissions.reduce(
+      (acc, sub) => acc + (sub.documents?.length || 0) + (sub.agreement_url ? 1 : 0),
+      0
+    );
 
     // 3. Count completed (status = 'complete') vs pending/missing (status = 'partial' or no submission yet)
     // Map existing submissions by token
@@ -193,8 +200,6 @@ const getDashboardStats = async (req, res) => {
     submissions.forEach(sub => {
       submissionMap[sub.token] = sub;
     });
-
-    const studentTokens = await StudentToken.find(filter);
     let completedCount = 0;
     let pendingCount = 0;
     const studentStatuses = [];
