@@ -47,8 +47,8 @@ const start = async () => {
 if (require.main === module) {
   start();
 } else {
-  // When required (e.g. by Vercel serverless or tests), ensure DB is connected
-  // but do not call `listen()` since the hosting platform manages the HTTP server.
+  // Ensures DB is connected in serverless/test environments,
+  // without calling listen() since the platform handles the server.
   connectDB().catch((err) => {
     console.error('Error connecting to DB on module load:', err.message);
   });

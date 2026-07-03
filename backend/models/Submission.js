@@ -23,8 +23,7 @@ const submissionSchema = new mongoose.Schema({
   agreement_public_id: { type: String, default: '' },
   submitted_at: { type: Date, default: Date.now },
   synced_to_sheet: { type: Boolean, default: false },
-  // Tracks whether the student submitted ALL required documents
-  // 'complete' = all docs uploaded | 'partial' = some docs missing
+  // Indicates document submission status: 'complete' = all required docs uploaded, 'partial' = some missing
   status: {
     type: String,
     enum: ['partial', 'complete'],

@@ -31,12 +31,9 @@ const storage = new CloudinaryStorage({
       return `${baseFolder}/${safeDocName}`;
     },
     allowed_formats: ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'],
-    // IMPORTANT: resource_type must NOT be 'auto' for PDFs.
-    // Cloudinary's 'auto' detection stores PDFs as an 'image' resource, which means
-    // the delivery URL only renders/serves PAGE 1 of the PDF (this was the cause of
-    // "multi-page PDF not working" — every page after the first was silently dropped
-    // whenever the file was opened later). Storing PDFs/Word docs as 'raw' preserves
-    // the full original multi-page file exactly as uploaded.
+    // resource_type must be 'raw' for PDFs/Docs.
+    // Using 'auto' treats PDFs as images and only preserves page 1,
+    // causing multi-page content loss. 'raw' keeps the full file intact.
     resource_type: (req, file) => {
       const ext = (file.originalname.split('.').pop() || '').toLowerCase();
       if (ext === 'pdf' || ext === 'doc' || ext === 'docx') return 'raw';

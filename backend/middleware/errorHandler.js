@@ -1,5 +1,5 @@
 const errorHandler = (err, req, res, next) => {
-  console.error('❌ Error:', err.message);
+  console.error('Error:', err.message);
 
   // Handle Multer file size limit error
   if (err.code === 'LIMIT_FILE_SIZE') {

@@ -29,9 +29,9 @@ const getStudentTokenInfo = async (req, res) => {
     agreementTemplateUrl = `${req.protocol}://${req.get('host')}/uploads/Agreement_template.pdf`;
   }
 
-  // --- Fetch existing submission to pre-mark already-uploaded docs ---
+  // Fetch existing submission to pre-mark already-uploaded docs
   const existingSub = await Submission.findOne({ token });
-  let already_uploaded_docs = [];   // list of doc labels already uploaded
+  let already_uploaded_docs = [];
   let already_has_agreement = false;
   let existing_status = null;
 
