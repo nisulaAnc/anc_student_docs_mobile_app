@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Modal, FlatList, ActivityIndicator, TextInput, Animated,
+  Modal, FlatList, ActivityIndicator, TextInput, Animated, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,20 +29,36 @@ export default function CounsellorPortalScreen({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [successAnim] = useState(new Animated.Value(0));
 
-  useEffect(() => { loadToken(); }, []);
-
-  const loadToken = async () => {
+  const loadToken = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    }
     try {
       const res = await getCounsellorTokenInfo(token);
       setData(res.data.data);
       await loadPrograms();
     } catch (e) {
-      setAlert({ type: 'error', msg: e.message });
-      setPhase(PHASE.ERROR);
+      if (!isRefresh) {
+        setAlert({ type: 'error', msg: e.message });
+        setPhase(PHASE.ERROR);
+      }
+    } finally {
+      if (isRefresh) setRefreshing(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    loadToken();
+    const interval = setInterval(() => loadToken(true), 60000);
+    const unsubscribe = navigation.addListener('focus', () => loadToken(true));
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
+  }, [loadToken, navigation]);
 
   const loadPrograms = async () => {
     setLoading(true); setAlert(null);
@@ -84,9 +100,18 @@ export default function CounsellorPortalScreen({ navigation, route }) {
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <TopBar onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {alert ? <AlertBox type={alert.type} message={alert.msg} /> : null}
-
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadToken(true)}
+            tintColor={COLORS.navy}
+            colors={[COLORS.navy]}
+          />
+        }
+      >
         {phase === PHASE.LOAD && (
           <View style={styles.center}>
             <ActivityIndicator size="large" color={COLORS.navy} />

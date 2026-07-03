@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Modal, Linking, Alert,
+  Modal, Linking, Alert, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -38,10 +38,12 @@ export default function StudentPortalScreen({ navigation, route }) {
   const [alert, setAlert] = useState(null);
   const [showPartialWarning, setShowPartialWarning] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => { loadToken(); }, []);
-
-  const loadToken = async () => {
+  const loadToken = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    }
     try {
       const res = await getStudentTokenInfo(token);
       const d = res.data.data;
@@ -63,10 +65,24 @@ export default function StudentPortalScreen({ navigation, route }) {
 
       setPhase(PHASE.UPLOAD);
     } catch (e) {
-      setAlert({ type: 'error', msg: e.message });
-      setPhase(PHASE.ERROR);
+      if (!isRefresh) {
+        setAlert({ type: 'error', msg: e.message });
+        setPhase(PHASE.ERROR);
+      }
+    } finally {
+      if (isRefresh) setRefreshing(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    loadToken();
+    const interval = setInterval(() => loadToken(true), 60000);
+    const unsubscribe = navigation.addListener('focus', () => loadToken(true));
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
+  }, [loadToken, navigation]);
 
   const handleFile = (index, file) => setFiles((prev) => ({ ...prev, [index]: file }));
   const handleRemove = (index, newValue = null) => setFiles((prev) => {
@@ -252,7 +268,18 @@ export default function StudentPortalScreen({ navigation, route }) {
         </View>
       </Modal>
 
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadToken(true)}
+            tintColor={COLORS.navy}
+            colors={[COLORS.navy]}
+          />
+        }
+      >
         {alert ? <AlertBox type={alert.type} message={alert.msg} /> : null}
 
         {/* LOADING */}

@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar,
-  Modal, TextInput, ActivityIndicator, Image, FlatList,
+  Modal, TextInput, ActivityIndicator, Image, FlatList, RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,21 +35,35 @@ export default function HomeScreen({ navigation }) {
   const [counsellorForm, setCounsellorForm] = useState({ name: '', email: '', pin: '', oldPin: '', newPin: '' });
   const [counsellorFormError, setCounsellorFormError] = useState('');
   const [counsellorFormLoading, setCounsellorFormLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const displayedCounsellorName = counsellorForm.name || selectedCounsellor?.name || '';
 
-  useEffect(() => {
-    // Prefetch counsellors list
-    loadCounsellorList();
-  }, []);
-
-  const loadCounsellorList = async () => {
+  const loadCounsellorList = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    }
     try {
       const res = await getCounsellors();
       if (res.data?.success) {
         setCounsellors(res.data.data || []);
       }
-    } catch (_) { }
-  };
+    } catch (_) {
+      // ignore failures while refreshing
+    } finally {
+      if (isRefresh) setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Prefetch counsellors list and keep it refreshed while the screen is active.
+    loadCounsellorList();
+    const interval = setInterval(() => loadCounsellorList(true), 60000);
+    const unsubscribe = navigation.addListener('focus', () => loadCounsellorList(true));
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
+  }, [loadCounsellorList, navigation]);
 
   const ROLES = [
     {
@@ -221,7 +235,18 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.tag}>Document Portal</Text>
       </LinearGradient>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadCounsellorList(true)}
+            tintColor={COLORS.navy}
+            colors={[COLORS.navy]}
+          />
+        }
+      >
         <Text style={styles.heading}>Welcome</Text>
         <Text style={styles.sub}>Select your role to continue.</Text>
 

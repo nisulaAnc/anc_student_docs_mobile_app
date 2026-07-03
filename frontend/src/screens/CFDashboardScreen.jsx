@@ -29,12 +29,9 @@ export default function CFDashboardScreen({ navigation, route }) {
   const [remindingToken, setRemindingToken] = useState(null);
   const [sortDirection, setSortDirection] = useState('asc');
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async (isRefresh = false) => {
+  const fetchStats = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
+    if (isRefresh) setRefreshing(true);
     setAlert(null);
     try {
       const params = {};
@@ -72,7 +69,17 @@ export default function CFDashboardScreen({ navigation, route }) {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [counsellorEmail, counsellorName]);
+
+  useEffect(() => {
+    fetchStats();
+    const interval = setInterval(() => fetchStats(true), 60000);
+    const unsubscribe = navigation.addListener('focus', () => fetchStats(true));
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
+  }, [fetchStats, navigation]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -144,7 +151,7 @@ export default function CFDashboardScreen({ navigation, route }) {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={onRefresh}
+            onRefresh={() => fetchStats(true)}
             tintColor={COLORS.navy}
             colors={[COLORS.navy]}
           />

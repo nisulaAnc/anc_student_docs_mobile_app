@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Modal, FlatList, ActivityIndicator, TextInput, Alert,
+  Modal, FlatList, ActivityIndicator, TextInput, Alert, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,17 +28,39 @@ export default function CFRegistrationScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [alert, setAlert] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => { fetchCounsellors(); }, []);
-
-  const fetchCounsellors = async () => {
+  const fetchCounsellors = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoadingC(true);
+    }
     try {
       const res = await getCounsellors();
       setCounsellors(res.data.data || []);
     } catch (e) {
-      setAlert({ type: 'error', msg: e.message || 'Cannot load counsellors.' });
-    } finally { setLoadingC(false); }
-  };
+      if (!isRefresh) {
+        setAlert({ type: 'error', msg: e.message || 'Cannot load counsellors.' });
+      }
+    } finally {
+      if (isRefresh) {
+        setRefreshing(false);
+      } else {
+        setLoadingC(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCounsellors();
+    const interval = setInterval(() => fetchCounsellors(true), 60000);
+    const unsubscribe = navigation.addListener('focus', () => fetchCounsellors(true));
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
+  }, [fetchCounsellors, navigation]);
 
   const validate = () => {
     const e = {};
@@ -71,7 +93,18 @@ export default function CFRegistrationScreen({ navigation }) {
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <TopBar onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchCounsellors(true)}
+            tintColor={COLORS.navy}
+            colors={[COLORS.navy]}
+          />
+        }
+      >
 
         <View style={styles.card}>
           <CardHeader eyebrow="Step 1 · CF Department" title="New Student Registration" subtitle="Fill in the student details and assign a counsellor." />
