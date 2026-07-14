@@ -310,7 +310,7 @@ const sendReminderEmail = async (req, res) => {
       'Action Required – Pending Documents Reminder',
       `<p style="font-size:15px;color:#334155;line-height:1.7;">
         Dear <strong>${studentToken.student_name}</strong>,<br><br>
-        This is a friendly reminder to submit your pending documents for your registration in <strong>${studentToken.program}</strong>.<br><br>
+        This is a friendly reminder to submit your pending documents for your registration in <strong>${studentToken.degree_description || studentToken.program}</strong>.<br><br>
         Your registration is currently <strong style="color:#DC2626;">incomplete</strong>. Please use the secure link below to upload the missing documents.
       </p>
       ${uploadedList ? `<p style="font-size:14px;font-weight:700;color:#16A34A;margin:16px 0 6px;">Documents Received:</p>
