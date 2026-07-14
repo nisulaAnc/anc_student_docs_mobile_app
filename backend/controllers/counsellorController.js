@@ -67,7 +67,7 @@ const selectProgram = async (req, res) => {
     'Complete Your Student Registration',
     `<p style="font-size:15px;color:#334155;line-height:1.7;">
       Dear <strong>${cfToken.student_name}</strong>,<br><br>
-      Your counsellor has selected your programme: <strong>${programDetail.label}</strong>.<br><br>
+      Your counsellor has selected your programme: <strong>${programDetail.description || programDetail.label}</strong>.<br><br>
       Please scan the QR code below using the <strong>ANC Student Docs Mobile App</strong> or click the button to verify your identity and submit your required documents.
     </p>
     <div style="text-align:center;margin:24px 0;">
