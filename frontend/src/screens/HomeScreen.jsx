@@ -276,10 +276,7 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         ))}
 
-        <Text style={styles.footer}>© {new Date().getFullYear()} ANC Education · Secure Document Portal
-          {"\n"}
-          Developed by Nisula Premaratne | IT Department
-        </Text>
+        <Text style={styles.footer}>© {new Date().getFullYear()} ANC Education · Secure Document Portal</Text>
       </ScrollView>
 
       {/* ── Counsellor Picker Modal ── */}
