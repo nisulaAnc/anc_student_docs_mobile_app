@@ -56,7 +56,7 @@ const registerCF = async (req, res) => {
   // Email counsellor
   const portalUrl = `${process.env.BASE_URL || 'http://localhost:5000'}/counsellor?token=${token}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(portalUrl)}`;
-  
+
   const html = emailHtml(
     'New Student Registration',
     `<p style="font-size:15px;color:#334155;line-height:1.7;">
