@@ -74,7 +74,7 @@ const registerCF = async (req, res) => {
         <strong style="font-family:monospace;font-size:16px;color:#0A2463;letter-spacing:2px;display:inline-block;margin-top:6px;padding:8px 16px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">${token}</strong>
       </div>
     </div>`,
-    'Open Counsellor Portal →',
+    'Open Counsellor Portal',
     portalUrl
   );
 
