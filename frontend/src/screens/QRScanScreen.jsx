@@ -151,7 +151,7 @@ function ManualSheet({ visible, token, setToken, onGo, onClose, insets = {}, COL
             maxLength={8}
           />
           <TouchableOpacity style={[styles.goBtn, { backgroundColor: COLORS.navy }]} onPress={() => onGo(token)}>
-            <Text style={styles.goBtnTxt}>Continue →</Text>
+            <Text style={styles.goBtnTxt}>Continue</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

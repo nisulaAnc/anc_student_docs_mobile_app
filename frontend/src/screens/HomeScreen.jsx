@@ -67,6 +67,26 @@ export default function HomeScreen({ navigation }) {
 
   const ROLES = [
     {
+      screen: 'CFDashboard',
+      params: {},
+      icon: 'grid',
+      color: '#8B5CF6',
+      label: 'CF Dashboard',
+      desc: 'View statistics, check document status & send reminders',
+      protected: true,
+      type: 'cf',
+    },
+    {
+      screen: 'CFDashboard', 
+      params: {},
+      icon: 'documents',
+      color: '#ecaa48',
+      label: 'Counsellor Dashboard',
+      desc: 'View your students\' completed & pending documents',
+      protected: true,
+      type: 'counsellor',
+    },
+    {
       screen: 'CFRegistration',
       params: {},
       icon: 'person-add',
@@ -77,29 +97,9 @@ export default function HomeScreen({ navigation }) {
       type: 'cf',
     },
     {
-      screen: 'CFDashboard',
-      params: {},
-      icon: 'analytics',
-      color: '#8B5CF6',
-      label: 'CF Portal Dashboard',
-      desc: 'View statistics, check document status & send reminders',
-      protected: true,
-      type: 'cf',
-    },
-    {
-      screen: 'CFDashboard', 
-      params: {},
-      icon: 'people',
-      color: '#EC4899',
-      label: 'Counsellor Dashboard',
-      desc: 'View your students\' completed & pending documents',
-      protected: true,
-      type: 'counsellor',
-    },
-    {
       screen: 'QRScan',
       params: { mode: 'counsellor' },
-      icon: 'shield-checkmark',
+      icon: 'list',
       color: COLORS.blue,
       label: 'Counsellor Portal',
       desc: 'Select the student programme and notify the student',
@@ -108,7 +108,7 @@ export default function HomeScreen({ navigation }) {
     {
       screen: 'QRScan',
       params: { mode: 'student' },
-      icon: 'documents',
+      icon: 'cloud-upload',
       color: COLORS.green,
       label: 'Student Portal',
       desc: 'Submit required documents for registration',
@@ -539,7 +539,7 @@ export default function HomeScreen({ navigation }) {
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
                     <>
-                      <Ionicons name={createMode === 'create' ? 'checkmark-circle' : 'save'} size={18} color="#fff" />
+                      {/* <Ionicons name={createMode === 'create' ? 'checkmark-circle' : 'save'} size={18} color="#fff" /> */}
                       <Text style={styles.pinBtnTxt}>{createMode === 'create' ? 'Create Login' : 'Save New PIN'}</Text>
                     </>
                   )}
@@ -648,11 +648,11 @@ export default function HomeScreen({ navigation }) {
             />
 
             {/* Dot indicators */}
-            <View style={styles.dotsRow}>
+            {/* <View style={styles.dotsRow}>
               {[0, 1, 2, 3, 4, 5].map((i) => (
                 <View key={i} style={[styles.dot, i < pin.length && styles.dotFilled]} />
               ))}
-            </View>
+            </View> */}
 
             {/* Error */}
             {pinError ? (
@@ -672,7 +672,7 @@ export default function HomeScreen({ navigation }) {
                 ? <ActivityIndicator color="#fff" size="small" />
                 : (
                   <>
-                    <Ionicons name="arrow-forward" size={18} color="#fff" />
+                    {/* <Ionicons name="arrow-forward" size={18} color="#fff" /> */}
                     <Text style={styles.pinBtnTxt}>Verify & Enter</Text>
                   </>
                 )}
@@ -764,7 +764,7 @@ const createStyles = (COLORS) => StyleSheet.create({
   pinTitle: { fontSize: 20, fontWeight: '800', color: COLORS.navy, marginBottom: 4 },
   pinSub: { fontSize: 13, color: COLORS.muted, textAlign: 'center' },
   pinInput: {
-    width: '100%', padding: 16, fontSize: 28, letterSpacing: 12,
+    width: '100%', padding: 10, fontSize: 28, letterSpacing: 12,
     backgroundColor: COLORS.bg, borderWidth: 2, borderColor: COLORS.border,
     borderRadius: 14, color: COLORS.navy, fontWeight: '700',
     marginBottom: 16,

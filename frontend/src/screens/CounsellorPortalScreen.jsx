@@ -143,13 +143,14 @@ export default function CounsellorPortalScreen({ navigation, route }) {
               </TouchableOpacity>
               <Button title="Confirm & Send Student Link" onPress={confirmProgram} loading={loading}
                 disabled={!selected} style={{ marginTop: 20 }}
-                icon={<Ionicons name="arrow-forward" size={16} color="#fff" />} />
+                 // icon={<Ionicons name="arrow-forward" size={16} color="#fff" /> }
+              />
 
               <TouchableOpacity
                 style={styles.dashboardLinkBtn}
                 onPress={() => navigation.navigate('CFDashboard', { counsellorName: data?.counsellor_name })}
               >
-                <Ionicons name="analytics" size={16} color={COLORS.accent} />
+                {/* <Ionicons name="analytics" size={16} color={COLORS.accent} /> */}
                 <Text style={styles.dashboardLinkTxt}>View Dashboard (My Students Only)</Text>
               </TouchableOpacity>
             </View>

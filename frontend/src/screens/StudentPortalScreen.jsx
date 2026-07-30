@@ -505,7 +505,7 @@ export default function StudentPortalScreen({ navigation, route }) {
                       disabled={newlyUploadedCount === 0}
                       variant="green"
                       style={{ marginTop: 16 }}
-                      icon={<Ionicons name="arrow-forward" size={16} color="#fff" />}
+                      //icon={<Ionicons name="arrow-forward" size={16} color="#fff" />}
                     />
                   </View>
                 </View>

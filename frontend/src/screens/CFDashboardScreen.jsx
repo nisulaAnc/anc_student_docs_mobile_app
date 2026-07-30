@@ -220,7 +220,7 @@ export default function CFDashboardScreen({ navigation, route }) {
             <Ionicons name="search" size={18} color={COLORS.muted} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search name, CF, email, counsellor..."
+              placeholder="Search CF Number, Student Email, Counsellor..."
               placeholderTextColor={COLORS.muted}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -293,10 +293,12 @@ export default function CFDashboardScreen({ navigation, route }) {
                 {/* Header block */}
                 <View style={styles.cardHeader}>
                   <View style={{ flex: 1, marginRight: 8 }}>
-                    <Text style={styles.studentName} numberOfLines={1}>{student.student_name}</Text>
-                    <Text style={styles.studentMeta}>CF: {student.cf_number}</Text>
-                    <Text style={styles.studentMeta}>Counsellor: {student.counsellor_name}</Text>
-                    <Text style={styles.studentEmail} numberOfLines={1}>{student.student_email}</Text>
+                    <Text style={styles.studentName} numberOfLines={1}>Student Name: {student.student_name}</Text>
+                    <Text style={styles.studentMeta}>CF Number: {student.cf_number}</Text>
+                    <Text style={styles.studentMeta}>Counsellor Name: {student.counsellor_name}</Text>
+                    <Text style={styles.studentMeta}>Student Email:
+                      <Text style={styles.studentEmail} numberOfLines={1}> {student.student_email}</Text>
+                    </Text>
                   </View>
                   <View style={[
                     styles.statusBadge,
