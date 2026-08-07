@@ -7,6 +7,8 @@ const { getDocumentsForProduct } = require('../utils/productDocuments');
 const { sendEmail, emailHtml } = require('../utils/email');
 const { resolveCounsellorPin, buildCounsellorSession, issueCounsellorToken, verifyCounsellorToken } = require('../utils/counsellorAuth');
 const { resolveCounsellorPinReset } = require('../utils/counsellorSheet');
+const { generateSecret, generateOtpAuthUri, verifyTotp } = require('../utils/twoFactor');
+const { getTwoFactorEntry, setTwoFactorEntry } = require('../utils/twoFactorStore');
 
 // GET /api/cf/counsellors
 const getCounsellorList = async (req, res) => {
@@ -133,9 +135,9 @@ const resetCounsellorPin = async (req, res) => {
 };
 
 // POST /api/cf/verify-pin
-// Body: { pin, type, counsellor } (type can be 'cf' or 'counsellor')
-const verifyCfPin = (req, res) => {
-  const { pin, type, counsellor } = req.body;
+// Body: { pin, type, counsellor, otp, staffEmail } (type can be 'cf' or 'counsellor')
+const verifyCfPin = async (req, res) => {
+  const { pin, type, counsellor, otp, staffEmail } = req.body;
   const correctCfPin = process.env.CF_PIN;
   const fallbackCounsellorPin = process.env.COUNSELLOR_PIN || '112233';
 
@@ -161,7 +163,85 @@ const verifyCfPin = (req, res) => {
     if (!pin || String(pin).trim() !== String(correctCfPin).trim()) {
       return res.status(401).json({ success: false, message: 'Incorrect Staff PIN. Access denied.' });
     }
+
+    if (staffEmail) {
+      const storeEntry = getTwoFactorEntry(staffEmail);
+      if (storeEntry?.enabled && storeEntry?.secret) {
+        if (!otp || !verifyTotp(storeEntry.secret, otp)) {
+          return res.status(401).json({ success: false, message: 'Invalid authenticator code.' });
+        }
+      }
+    }
+
     return res.json({ success: true, message: 'Staff PIN verified.', role: 'cf' });
+  }
+};
+
+// POST /api/cf/two-factor/setup
+const setupTwoFactor = async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required.' });
+    }
+
+    const counsellors = await getCounsellors();
+    const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email).trim().toLowerCase());
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Counsellor not found.' });
+    }
+
+    const secret = generateSecret(20);
+    const label = `${name || existing.name || 'Counsellor'}:${email}`;
+    const otpauthUri = generateOtpAuthUri(label, secret, 'ANC Student Docs');
+
+    return res.json({
+      success: true,
+      data: {
+        secret,
+        qr_code_uri: otpauthUri,
+        manual_code: secret,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Unable to configure 2FA.' });
+  }
+};
+
+// POST /api/cf/two-factor/enable
+const enableTwoFactor = async (req, res) => {
+  try {
+    const { email, secret, otp, enabled } = req.body;
+    if (!email || !secret || !otp) {
+      return res.status(400).json({ success: false, message: 'Email, secret and OTP are required.' });
+    }
+
+    if (!verifyTotp(secret, otp)) {
+      return res.status(401).json({ success: false, message: 'The authenticator code is invalid.' });
+    }
+
+    const counsellors = await getCounsellors();
+    const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email).trim().toLowerCase());
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Counsellor not found.' });
+    }
+
+    const result = await upsertCounsellorRecord({
+      name: existing.name,
+      email,
+      pin: existing.pin,
+      two_factor_enabled: enabled !== false,
+      two_factor_secret: secret,
+    });
+
+    setTwoFactorEntry(email, {
+      enabled: enabled !== false,
+      secret,
+    });
+
+    return res.json({ success: true, message: enabled === false ? '2FA disabled.' : '2FA enabled.', data: { created: result.created, email } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Unable to update 2FA setting.' });
   }
 };
 
