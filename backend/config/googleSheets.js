@@ -176,7 +176,8 @@ async function upsertCounsellorRecord(counsellor) {
   const rowValues = buildCounsellorSheetRow(existingRow, {
     name: counsellor.name,
     email: targetEmail,
-    pin: counsellor.pin,
+    password: counsellor.password || counsellor.pin,
+    role: counsellor.role,
   }, headers);
 
   if (existingIndex >= 0) {
@@ -198,12 +199,15 @@ async function getCounsellors() {
     const nameIndex = indexes.nameIndex ?? 2;
     const emailIndex = indexes.emailIndex ?? 4;
     const pinIndex = indexes.pinIndex ?? 5;
+    const roleIndex = indexes.roleIndex ?? 6;
     const name = r[nameIndex] ? String(r[nameIndex]).trim() : '';
     const email = r[emailIndex] ? String(r[emailIndex]).trim() : '';
     const pin = r[pinIndex] ? String(r[pinIndex]).trim() : '';
+    const role = r[roleIndex] ? String(r[roleIndex]).trim() : '';
     if (name && email) {
       const counsellor = { name, email };
       if (pin) counsellor.pin = pin;
+      if (role) counsellor.role = role;
       out.push(counsellor);
     }
   }
