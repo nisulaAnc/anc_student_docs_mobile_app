@@ -2,17 +2,18 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar,
   Modal, TextInput, ActivityIndicator, Image, FlatList, RefreshControl,
+  Animated, Dimensions, Switch,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
-import { verifyCfPin, getCounsellors, registerCounsellorAccount, resetCounsellorPin } from '../services/api';
+import { verifyCfPin, getCounsellors, registerCounsellorAccount, resetCounsellorPin, setupTwoFactor, enableTwoFactor } from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { theme, toggleTheme, colors: COLORS } = useTheme();
+  const { colors: COLORS } = useTheme();
   const styles = createStyles(COLORS);
 
   const [destScreen, setDestScreen] = useState('CFRegistration');
@@ -36,6 +37,12 @@ export default function HomeScreen({ navigation }) {
   const [counsellorFormError, setCounsellorFormError] = useState('');
   const [counsellorFormLoading, setCounsellorFormLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [twoFactorState, setTwoFactorState] = useState({ enabled: false, secret: '', qrCodeUri: '', qrCodeImageUrl: '', manualCode: '', otp: '', loading: false, setupVisible: false });
+  const [staffEmail, setStaffEmail] = useState('');
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [profileVisible, setProfileVisible] = useState(false);
+  const [menuAnimation] = useState(new Animated.Value(Dimensions.get('window').width));
   const displayedCounsellorName = counsellorForm.name || selectedCounsellor?.name || '';
 
   const loadCounsellorList = useCallback(async (isRefresh = false) => {
@@ -120,6 +127,8 @@ export default function HomeScreen({ navigation }) {
     if (role.protected) {
       setPin('');
       setPinError('');
+      setStaffEmail('');
+      setTwoFactorState({ enabled: false, secret: '', qrCodeUri: '', manualCode: '', otp: '', loading: false, setupVisible: false });
       setDestScreen(role.screen);
       if (role.type === 'counsellor') {
         setIsCounsellorFlow(true);
@@ -199,7 +208,8 @@ export default function HomeScreen({ navigation }) {
           setPinLoading(false);
           return;
         }
-        const res = await verifyCfPin(pin, 'counsellor', selectedCounsellor);
+        const staffEmailValue = (selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
+        const res = await verifyCfPin(pin, 'counsellor', selectedCounsellor, twoFactorState.otp || '', staffEmailValue);
         if (res.data?.token) {
           await AsyncStorage.setItem('counsellorSession', res.data.token);
         }
@@ -207,9 +217,11 @@ export default function HomeScreen({ navigation }) {
         setPin('');
         navigation.navigate('CFDashboard', { counsellorName: selectedCounsellor.name, counsellorEmail: selectedCounsellor.email });
       } else {
-        await verifyCfPin(pin, 'cf');
+        const staffEmailValue = (selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
+        await verifyCfPin(pin, 'cf', null, twoFactorState.otp || '', staffEmailValue);
         setPinModalVisible(false);
         setPin('');
+        setTwoFactorState((prev) => ({ ...prev, otp: '' }));
         navigation.navigate(destScreen, {});
       }
     } catch (e) {
@@ -221,12 +233,96 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  const openMenu = () => {
+    setMenuVisible(true);
+    Animated.timing(menuAnimation, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const closeMenu = () => {
+    Animated.timing(menuAnimation, {
+      toValue: Dimensions.get('window').width,
+      duration: 220,
+      useNativeDriver: false,
+    }).start(() => setMenuVisible(false));
+  };
+
+  const buildQrCodeUrl = (uri) => (uri ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(uri)}` : '');
+
+  const handleSettingsTwoFactorToggle = async (value) => {
+    if (value) {
+      const email = (selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
+      if (!email) {
+        setCounsellorFormError('Enter the staff email before enabling 2FA.');
+        return;
+      }
+      await handleSetupTwoFactor(email);
+      return;
+    }
+
+    await handleToggleTwoFactor(false);
+  };
+
+  const handleSetupTwoFactor = async (emailOverride = '') => {
+    const email = (emailOverride || selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
+    if (!email) {
+      setCounsellorFormError('Enter the staff email before enabling 2FA.');
+      return;
+    }
+
+    setTwoFactorState((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await setupTwoFactor({ email, name: selectedCounsellor?.name || counsellorForm.name || '' });
+      if (res.data?.success) {
+        setTwoFactorState((prev) => ({
+          ...prev,
+          loading: false,
+          setupVisible: true,
+          secret: res.data.data?.secret || '',
+          qrCodeUri: res.data.data?.qr_code_uri || '',
+          qrCodeImageUrl: buildQrCodeUrl(res.data.data?.qr_code_uri || ''),
+          manualCode: res.data.data?.manual_code || '',
+          enabled: false,
+        }));
+      }
+    } catch (e) {
+      setCounsellorFormError(e.response?.data?.message || 'Unable to set up authenticator.');
+      setTwoFactorState((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleToggleTwoFactor = async (enabled) => {
+    const email = (selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
+    const secret = twoFactorState.secret;
+    const otp = twoFactorState.otp;
+
+    if (!email || !secret || !otp) {
+      setCounsellorFormError('Complete the authenticator setup first.');
+      return;
+    }
+
+    setTwoFactorState((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await enableTwoFactor({ email, secret, otp, enabled });
+      if (res.data?.success) {
+        setTwoFactorState((prev) => ({ ...prev, loading: false, enabled, setupVisible: false, otp: '' }));
+        setCounsellorFormError('');
+      }
+    } catch (e) {
+      setCounsellorFormError(e.response?.data?.message || 'Unable to update 2FA.');
+      setTwoFactorState((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.navy} />
       <LinearGradient colors={[COLORS.navy, COLORS.blue]} style={[styles.hero, { paddingTop: insets.top + 24 }]}>
-        <TouchableOpacity style={{ position: 'absolute', top: insets.top + 16, right: 20 }} onPress={toggleTheme}>
-          <Ionicons name={theme === 'dark' ? 'sunny' : 'moon'} size={26} color={theme === 'dark' ? '#FFD700' : COLORS.white} />
+        <TouchableOpacity style={{ position: 'absolute', top: insets.top + 16, left: 20 }} onPress={openMenu}>
+          <Ionicons name="menu" size={26} color={COLORS.white} />
         </TouchableOpacity>
         <View style={styles.logoMark}>
           <Image source={require('../../assets/logo.png')} style={{ width: 44, height: 44 }} resizeMode="contain" />
@@ -278,6 +374,118 @@ export default function HomeScreen({ navigation }) {
 
         <Text style={styles.footer}>© {new Date().getFullYear()} ANC Education · Secure Document Portal</Text>
       </ScrollView>
+
+      <Modal visible={menuVisible} transparent animationType="none">
+        <View style={styles.drawerOverlay}>
+          <TouchableOpacity style={styles.drawerBackdrop} onPress={closeMenu} />
+          <Animated.View style={[styles.drawerPanel, { transform: [{ translateX: menuAnimation }] }]}> 
+            <View style={styles.drawerHeader}>
+              <View style={styles.drawerAvatar}>
+                <Ionicons name="person" size={24} color={COLORS.white} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.drawerTitle}>ANC Student Docs</Text>
+                <Text style={styles.drawerSubtitle}>Secure staff portal</Text>
+              </View>
+              <TouchableOpacity onPress={closeMenu}>
+                <Ionicons name="close" size={22} color={COLORS.muted} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.drawerItem} onPress={() => { closeMenu(); navigation.navigate('Home'); }}>
+              <Ionicons name="home-outline" size={18} color={COLORS.navy} />
+              <Text style={styles.drawerItemText}>Home</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.drawerItem} onPress={() => { closeMenu(); setProfileVisible(true); }}>
+              <Ionicons name="person-circle-outline" size={18} color={COLORS.navy} />
+              <Text style={styles.drawerItemText}>My Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.drawerItem} onPress={() => { closeMenu(); setSettingsVisible(true); }}>
+              <Ionicons name="settings-outline" size={18} color={COLORS.navy} />
+              <Text style={styles.drawerItemText}>Settings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.drawerItem} onPress={() => { closeMenu(); navigation.navigate('Home'); }}>
+              <Ionicons name="log-out-outline" size={18} color={COLORS.navy} />
+              <Text style={styles.drawerItemText}>Logout</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      </Modal>
+
+      <Modal visible={settingsVisible} transparent animationType="fade">
+        <View style={styles.modalBg}>
+          <View style={styles.settingsCard}>
+            <View style={styles.settingsHeader}>
+              <Text style={styles.settingsTitle}>Account Settings</Text>
+              <TouchableOpacity onPress={() => setSettingsVisible(false)}>
+                <Ionicons name="close" size={20} color={COLORS.muted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.settingsText}>Enable authenticator app verification for staff access.</Text>
+            <View style={styles.settingsSwitchRow}>
+              <Text style={styles.settingsLabel}>Authenticator App (2FA)</Text>
+              <Switch
+                value={twoFactorState.enabled}
+                onValueChange={handleSettingsTwoFactorToggle}
+                thumbColor={twoFactorState.enabled ? COLORS.white : COLORS.white}
+                trackColor={{ false: COLORS.border, true: COLORS.blue }}
+              />
+            </View>
+            <TextInput
+              style={styles.staffEmailInput}
+              value={staffEmail}
+              onChangeText={setStaffEmail}
+              placeholder="Staff email"
+              placeholderTextColor={COLORS.muted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            {twoFactorState.setupVisible ? (
+              <View style={styles.settingsBox}>
+                <Text style={styles.settingsBoxText}>Enter the code from your authenticator app.</Text>
+                <TextInput
+                  style={styles.twoFactorInput}
+                  value={twoFactorState.otp}
+                  onChangeText={(t) => setTwoFactorState((prev) => ({ ...prev, otp: t.replace(/\D/g, '').slice(0, 6) }))}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  placeholder="6-digit code"
+                  placeholderTextColor={COLORS.muted}
+                />
+                {twoFactorState.qrCodeImageUrl ? (
+                  <View style={styles.qrCard}>
+                    <Text style={styles.qrTitle}>Scan QR code</Text>
+                    <Image source={{ uri: twoFactorState.qrCodeImageUrl }} style={styles.qrImage} />
+                    <Text style={styles.qrText}>Manual code: {twoFactorState.manualCode || twoFactorState.secret}</Text>
+                  </View>
+                ) : null}
+                <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleToggleTwoFactor(true)} disabled={twoFactorState.loading || !twoFactorState.otp}>
+                  <Text style={styles.secondaryBtnText}>Enable</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={profileVisible} transparent animationType="fade">
+        <View style={styles.modalBg}>
+          <View style={styles.settingsCard}>
+            <View style={styles.settingsHeader}>
+              <Text style={styles.settingsTitle}>My Profile</Text>
+              <TouchableOpacity onPress={() => setProfileVisible(false)}>
+                <Ionicons name="close" size={20} color={COLORS.muted} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.profileRow}>
+              <Ionicons name="person-circle-outline" size={28} color={COLORS.navy} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.profileName}>Staff Account</Text>
+                <Text style={styles.profileMeta}>{staffEmail || 'Add your staff email in Settings'}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Counsellor Picker Modal ── */}
       <Modal visible={showCounsellorPicker} animationType="slide" transparent>
@@ -632,6 +840,48 @@ export default function HomeScreen({ navigation }) {
               </View>
             ) : null}
 
+            {!isCounsellorFlow ? (
+              <View style={styles.twoFactorSection}>
+                <Text style={styles.twoFactorTitle}>Staff authenticator</Text>
+                <Text style={styles.twoFactorSub}>Use the authenticator app only for staff accounts.</Text>
+                <TextInput
+                  style={styles.staffEmailInput}
+                  value={staffEmail}
+                  onChangeText={setStaffEmail}
+                  placeholder="Staff email"
+                  placeholderTextColor={COLORS.muted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity style={styles.twoFactorBtn} onPress={handleSetupTwoFactor} disabled={twoFactorState.loading}>
+                  <Text style={styles.twoFactorBtnText}>{twoFactorState.setupVisible ? 'Reconfigure authenticator' : 'Set up authenticator'}</Text>
+                </TouchableOpacity>
+                {twoFactorState.setupVisible ? (
+                  <View style={styles.twoFactorCard}>
+                    <Text style={styles.twoFactorHint}>Scan the QR code in your authenticator app, then enter the 6-digit code below.</Text>
+                    <TextInput
+                      style={styles.twoFactorInput}
+                      value={twoFactorState.otp}
+                      onChangeText={(t) => setTwoFactorState((prev) => ({ ...prev, otp: t.replace(/\D/g, '').slice(0, 6) }))}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      placeholder="Enter code"
+                      placeholderTextColor={COLORS.muted}
+                    />
+                    <View style={styles.twoFactorActions}>
+                      <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleToggleTwoFactor(true)} disabled={twoFactorState.loading || !twoFactorState.otp}>
+                        <Text style={styles.secondaryBtnText}>Enable</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleToggleTwoFactor(false)} disabled={twoFactorState.loading || !twoFactorState.otp}>
+                        <Text style={styles.secondaryBtnText}>Disable</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {twoFactorState.qrCodeUri ? <Text style={styles.qrCodeText}>{twoFactorState.qrCodeUri}</Text> : null}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
             {/* PIN input */}
             <TextInput
               ref={pinInputRef}
@@ -750,6 +1000,30 @@ const createStyles = (COLORS) => StyleSheet.create({
 
   // ── PIN Modal ──
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  drawerOverlay: { flex: 1, flexDirection: 'row' },
+  drawerBackdrop: { flex: 1, backgroundColor: 'rgba(2,6,23,0.35)' },
+  drawerPanel: { width: '78%', backgroundColor: COLORS.white, paddingTop: 24, paddingHorizontal: 16, paddingBottom: 20 },
+  drawerHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  drawerAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  drawerTitle: { fontSize: 16, fontWeight: '800', color: COLORS.navy },
+  drawerSubtitle: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
+  drawerItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  drawerItemText: { fontSize: 15, fontWeight: '700', color: COLORS.text },
+  settingsCard: { width: '90%', maxWidth: 420, backgroundColor: COLORS.white, borderRadius: 20, padding: 20 },
+  settingsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  settingsTitle: { fontSize: 18, fontWeight: '800', color: COLORS.navy },
+  settingsText: { fontSize: 13, color: COLORS.muted, marginBottom: 12 },
+  settingsSwitchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingVertical: 8 },
+  settingsLabel: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  settingsBox: { marginTop: 10, padding: 10, borderRadius: 12, backgroundColor: COLORS.bg },
+  settingsBoxText: { fontSize: 12, color: COLORS.muted, marginBottom: 8 },
+  qrCard: { marginTop: 8, marginBottom: 8, padding: 10, borderRadius: 12, backgroundColor: COLORS.white, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border },
+  qrTitle: { fontSize: 12, fontWeight: '700', color: COLORS.navy, marginBottom: 8 },
+  qrImage: { width: 180, height: 180, marginBottom: 8, borderRadius: 12 },
+  qrText: { fontSize: 12, color: COLORS.text, textAlign: 'center' },
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
+  profileName: { fontSize: 15, fontWeight: '800', color: COLORS.navy },
+  profileMeta: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
   pinSheet: {
     backgroundColor: COLORS.white, borderRadius: 24, width: '100%',
     padding: 28, alignItems: 'center',
@@ -786,6 +1060,19 @@ const createStyles = (COLORS) => StyleSheet.create({
     backgroundColor: COLORS.navy, borderRadius: 14, paddingVertical: 15,
     width: '100%', marginBottom: 10,
   },
+  twoFactorSection: { width: '100%', marginBottom: 16, padding: 12, borderRadius: 14, backgroundColor: COLORS.bg },
+  twoFactorTitle: { fontSize: 14, fontWeight: '700', color: COLORS.navy, marginBottom: 4 },
+  staffEmailInput: { width: '100%', backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 10, fontSize: 13, color: COLORS.text, marginBottom: 8 },
+  twoFactorSub: { fontSize: 12, color: COLORS.muted, marginBottom: 10 },
+  twoFactorBtn: { alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: COLORS.navy },
+  twoFactorBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  twoFactorCard: { marginTop: 10, padding: 10, borderRadius: 12, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
+  twoFactorHint: { fontSize: 12, color: COLORS.text, marginBottom: 8 },
+  twoFactorInput: { backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 10, fontSize: 14, color: COLORS.text, marginBottom: 8 },
+  twoFactorActions: { flexDirection: 'row', gap: 8 },
+  secondaryBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: COLORS.navy },
+  secondaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  qrCodeText: { marginTop: 8, fontSize: 11, color: COLORS.muted },
   pinBtnDisabled: { opacity: 0.45 },
   pinBtnTxt: { color: '#fff', fontSize: 16, fontWeight: '700' },
   pinCancelBtn: { paddingVertical: 10 },

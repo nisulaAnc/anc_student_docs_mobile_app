@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, TextInput, Alert, RefreshControl,
+  ActivityIndicator, TextInput, Alert, RefreshControl, Image, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TopBar from '../components/TopBar';
 import AlertBox from '../components/AlertBox';
-import { getCfDashboardStats, sendPendingReminder } from '../services/api';
+import { getCfDashboardStats, sendPendingReminder, setupTwoFactor, enableTwoFactor } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -28,6 +28,8 @@ export default function CFDashboardScreen({ navigation, route }) {
   const [filterMode, setFilterMode] = useState('all'); // 'all', 'complete', 'pending'
   const [remindingToken, setRemindingToken] = useState(null);
   const [sortDirection, setSortDirection] = useState('asc');
+  const [staffEmail, setStaffEmail] = useState(counsellorEmail || '');
+  const [twoFactorState, setTwoFactorState] = useState({ enabled: false, secret: '', qrCodeUri: '', qrCodeImageUrl: '', manualCode: '', otp: '', loading: false, setupVisible: false });
 
   const fetchStats = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
@@ -85,6 +87,55 @@ export default function CFDashboardScreen({ navigation, route }) {
     setRefreshing(true);
     fetchStats(true);
   }, []);
+
+  const buildQrCodeUrl = (uri) => (uri ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(uri)}` : '');
+
+  const handleSetupTwoFactor = async () => {
+    const email = (staffEmail || counsellorEmail || '').trim();
+    if (!email) {
+      setAlert({ type: 'error', msg: 'Enter a staff or counsellor email before setting up 2FA.' });
+      return;
+    }
+
+    setTwoFactorState((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await setupTwoFactor({ email, name: counsellorName || 'Staff' });
+      if (res.data?.success) {
+        setTwoFactorState((prev) => ({
+          ...prev,
+          loading: false,
+          setupVisible: true,
+          secret: res.data.data?.secret || '',
+          qrCodeUri: res.data.data?.qr_code_uri || '',
+          qrCodeImageUrl: buildQrCodeUrl(res.data.data?.qr_code_uri || ''),
+          manualCode: res.data.data?.manual_code || '',
+        }));
+      }
+    } catch (e) {
+      setAlert({ type: 'error', msg: e.response?.data?.message || 'Unable to configure 2FA.' });
+      setTwoFactorState((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleToggleTwoFactor = async (enabled) => {
+    const email = (staffEmail || counsellorEmail || '').trim();
+    if (!email || !twoFactorState.secret || !twoFactorState.otp) {
+      setAlert({ type: 'error', msg: 'Complete the authenticator setup first.' });
+      return;
+    }
+
+    setTwoFactorState((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await enableTwoFactor({ email, secret: twoFactorState.secret, otp: twoFactorState.otp, enabled });
+      if (res.data?.success) {
+        setTwoFactorState((prev) => ({ ...prev, loading: false, otp: '', setupVisible: false, enabled }));
+        setAlert({ type: 'success', msg: enabled ? 'Authenticator app enabled for this staff account.' : 'Authenticator app disabled for this staff account.' });
+      }
+    } catch (e) {
+      setAlert({ type: 'error', msg: e.response?.data?.message || 'Unable to update 2FA.' });
+      setTwoFactorState((prev) => ({ ...prev, loading: false }));
+    }
+  };
 
   const handleSendReminder = async (student) => {
     setRemindingToken(student.token);
@@ -158,6 +209,64 @@ export default function CFDashboardScreen({ navigation, route }) {
         }
       >
         {alert ? <AlertBox type={alert.type} message={alert.msg} /> : null}
+
+        <View style={styles.twoFactorCard}>
+          <View style={styles.twoFactorSwitchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.twoFactorTitle}>Authenticator App (2FA)</Text>
+              <Text style={styles.twoFactorText}>Turn this on or off for staff accounts and scan the QR code in your authenticator app.</Text>
+            </View>
+            <Switch
+              value={twoFactorState.enabled}
+              onValueChange={(value) => (value ? handleSetupTwoFactor() : handleToggleTwoFactor(false))}
+              thumbColor={COLORS.white}
+              trackColor={{ false: COLORS.border, true: COLORS.blue }}
+            />
+          </View>
+          {!counsellorEmail ? (
+            <TextInput
+              style={styles.emailInput}
+              value={staffEmail}
+              onChangeText={setStaffEmail}
+              placeholder="Staff email"
+              placeholderTextColor={COLORS.muted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          ) : null}
+          <TouchableOpacity style={styles.twoFactorBtn} onPress={handleSetupTwoFactor} disabled={twoFactorState.loading}>
+            <Text style={styles.twoFactorBtnText}>{twoFactorState.setupVisible ? 'Reconfigure' : 'Set up authenticator'}</Text>
+          </TouchableOpacity>
+          {twoFactorState.setupVisible ? (
+            <View style={styles.twoFactorSetupBox}>
+              <Text style={styles.twoFactorSetupText}>Scan the QR code in your authenticator app. If you cannot scan, use the manual secret below.</Text>
+              <TextInput
+                style={styles.codeInput}
+                value={twoFactorState.otp}
+                onChangeText={(t) => setTwoFactorState((prev) => ({ ...prev, otp: t.replace(/\D/g, '').slice(0, 6) }))}
+                placeholder="Enter 6-digit code"
+                placeholderTextColor={COLORS.muted}
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+              {twoFactorState.qrCodeImageUrl ? (
+                <View style={styles.qrCard}>
+                  <Text style={styles.qrTitle}>Scan QR code</Text>
+                  <Image source={{ uri: twoFactorState.qrCodeImageUrl }} style={styles.qrImage} />
+                  <Text style={styles.qrText}>Manual code: {twoFactorState.manualCode || twoFactorState.secret}</Text>
+                </View>
+              ) : null}
+              <View style={styles.twoFactorActions}>
+                <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleToggleTwoFactor(true)} disabled={twoFactorState.loading || !twoFactorState.otp}>
+                  <Text style={styles.secondaryBtnText}>Enable</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleToggleTwoFactor(false)} disabled={twoFactorState.loading || !twoFactorState.otp}>
+                  <Text style={styles.secondaryBtnText}>Disable</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+        </View>
 
         {/* Refresh hint */}
         <View style={styles.refreshHint}>

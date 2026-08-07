@@ -15,9 +15,10 @@ function getCounsellorFieldIndexes(headers = []) {
 
     return {
         //nameIndex: findIndex(['full name', 'name', 'counsellor name', 'full-name', 'full_name']),
-        nameIndex: findIndex(['full name', 'Display Name']),
+        nameIndex: findIndex(['full name', 'display name', 'Display Name']),
         emailIndex: findIndex(['email', 'email address', 'counsellor email', 'e-mail']),
         pinIndex: findIndex(['pin', 'pin number', 'password', 'security pin']),
+        roleIndex: findIndex(['role', 'user type', 'user type (role)']),
     };
 }
 
@@ -28,18 +29,22 @@ function buildCounsellorSheetRow(existingRow = [], counsellor = {}, headers = []
     const nameIndex = indexes.nameIndex ?? 2;
     const emailIndex = indexes.emailIndex ?? 4;
     const pinIndex = indexes.pinIndex ?? 5;
+    const roleIndex = indexes.roleIndex ?? 6;
 
-    while (row.length <= Math.max(nameIndex, emailIndex, pinIndex, 5)) {
+    while (row.length <= Math.max(nameIndex, emailIndex, pinIndex, roleIndex, 6)) {
         row.push('');
     }
 
     const name = counsellor.name || row[nameIndex] || '';
     const email = counsellor.email || row[emailIndex] || '';
-    const pin = counsellor.pin || row[pinIndex] || '';
+    // store password in the existing PIN/password column for backwards compatibility
+    const pin = counsellor.pin || counsellor.password || row[pinIndex] || '';
+    const role = counsellor.role || row[roleIndex] || '';
 
     row[nameIndex] = name;
     row[emailIndex] = email;
     row[pinIndex] = pin;
+    row[roleIndex] = role;
     return row;
 }
 

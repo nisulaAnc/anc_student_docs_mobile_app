@@ -30,11 +30,21 @@ export const getCounsellors = () => api.get('/cf/counsellors');
 
 export const registerStudent = (data) => api.post('/cf/register', data);
 
-export const verifyCfPin = (pin, type = 'cf', counsellor = null) => api.post('/cf/verify-pin', { pin, type, counsellor });
+export const verifyCfPin = (pin, type = 'cf', counsellor = null, otp = '', staffEmail = '') => api.post('/cf/verify-pin', { pin, type, counsellor, otp, staffEmail });
 
 export const registerCounsellorAccount = (data) => api.post('/cf/counsellor/register', data);
 
 export const resetCounsellorPin = (data) => api.post('/cf/counsellor/reset-pin', data);
+
+export const setupTwoFactor = (data) => api.post('/cf/two-factor/setup', data);
+
+export const enableTwoFactor = (data) => api.post('/cf/two-factor/enable', data);
+
+// Staff auth (register/login/forgot/reset)
+export const registerStaff = (data) => api.post('/cf/staff/register', data);
+export const loginStaff = (data) => api.post('/cf/staff/login', data);
+export const forgotPassword = (data) => api.post('/cf/staff/forgot-password', data);
+export const resetPassword = (data) => api.post('/cf/staff/reset-password', data);
 
 export const getCounsellorTokenInfo = (token) =>
   api.get('/cf/counsellor/token-info', { params: { token } });

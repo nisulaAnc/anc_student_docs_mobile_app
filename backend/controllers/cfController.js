@@ -9,6 +9,7 @@ const { resolveCounsellorPin, buildCounsellorSession, issueCounsellorToken, veri
 const { resolveCounsellorPinReset } = require('../utils/counsellorSheet');
 const { generateSecret, generateOtpAuthUri, verifyTotp } = require('../utils/twoFactor');
 const { getTwoFactorEntry, setTwoFactorEntry } = require('../utils/twoFactorStore');
+const { setResetToken, getResetEntry, clearResetEntry } = require('../utils/passwordResetStore');
 
 // GET /api/cf/counsellors
 const getCounsellorList = async (req, res) => {
@@ -428,6 +429,128 @@ const sendReminderEmail = async (req, res) => {
   }
 };
 
+// POST /api/cf/staff/register
+// Body: { name, email, password, role }
+const registerStaff = async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, message: 'Name, email and password are required.' });
+    }
+
+    const result = await upsertCounsellorRecord({ name, email, password, role });
+
+    // send verification/confirmation email
+    try {
+      const html = emailHtml(
+        'Account Verified',
+        `<p>Dear <strong>${name}</strong>,<br/><br/>Your account has been created and verified. You can now access the ANC Student Docs mobile app.</p>`
+      );
+      await sendEmail(email, 'ANC Student Docs – Your account verified', html);
+    } catch (e) {
+      console.error('Email send error (registerStaff):', e.message);
+    }
+
+    const token = issueCounsellorToken({ name, email });
+    return res.json({ success: true, message: 'Your account verified.', token, email, created: result.created });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Failed to register account.' });
+  }
+};
+
+// POST /api/cf/staff/login
+// Body: { email, password, otp }
+const loginStaff = async (req, res) => {
+  try {
+    const { email, password, otp } = req.body;
+    if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password are required.' });
+
+    const counsellors = await getCounsellors();
+    const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
+    if (!existing) return res.status(404).json({ success: false, message: 'Account not found.' });
+
+    const stored = String(existing.pin || existing.password || '').trim();
+    if (!stored || stored !== String(password).trim()) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+    }
+
+    const two = getTwoFactorEntry(email);
+    if (two?.enabled && two?.secret) {
+      if (!otp || !verifyTotp(two.secret, otp)) {
+        return res.status(401).json({ success: false, message: 'Authenticator code is required or invalid.' });
+      }
+    }
+
+    const token = issueCounsellorToken(existing);
+    return res.json({ success: true, message: 'Login successful.', token, counsellor: buildCounsellorSession(existing) });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Login failed.' });
+  }
+};
+
+// POST /api/cf/staff/forgot-password
+// Body: { email }
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
+
+    const counsellors = await getCounsellors();
+    const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
+    if (!existing) return res.status(404).json({ success: false, message: 'Account not found.' });
+
+    const token = uuidv4();
+    setResetToken(email, token, Date.now() + 1000 * 60 * 60); // 1 hour
+
+    const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
+    const resetUrl = `${BASE_URL}/staff/reset-password?email=${encodeURIComponent(email)}&token=${token}`;
+
+    try {
+      const html = emailHtml(
+        'Password Reset',
+        `<p>Dear <strong>${existing.name}</strong>,<br/><br/>Click the link below to reset your password (valid for 1 hour):<br/><br/><a href="${resetUrl}">Reset password</a></p>`
+      );
+      await sendEmail(email, 'ANC Student Docs – Password reset', html);
+    } catch (e) {
+      console.error('Email send error (forgotPassword):', e.message);
+    }
+
+    return res.json({ success: true, message: 'Password reset email sent if the account exists.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Unable to process password reset.' });
+  }
+};
+
+// POST /api/cf/staff/reset-password
+// Body: { email, token, newPassword }
+const resetPassword = async (req, res) => {
+  try {
+    const { email, token, newPassword } = req.body;
+    if (!email || !token || !newPassword) return res.status(400).json({ success: false, message: 'Email, token and newPassword are required.' });
+
+    const entry = getResetEntry(email);
+    if (!entry || entry.token !== token) return res.status(400).json({ success: false, message: 'Invalid or expired reset token.' });
+
+    const counsellors = await getCounsellors();
+    const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
+    if (!existing) return res.status(404).json({ success: false, message: 'Account not found.' });
+
+    await upsertCounsellorRecord({ name: existing.name, email, password: newPassword, role: existing.role });
+    clearResetEntry(email);
+
+    try {
+      const html = emailHtml('Password Reset Confirmed', `<p>Your password has been changed successfully.</p>`);
+      await sendEmail(email, 'ANC Student Docs – Password changed', html);
+    } catch (e) {
+      console.error('Email send error (resetPassword):', e.message);
+    }
+
+    return res.json({ success: true, message: 'Password reset successful.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Unable to reset password.' });
+  }
+};
+
 module.exports = {
   getCounsellorList,
   registerCF,
@@ -437,4 +560,8 @@ module.exports = {
   sendReminderEmail,
   registerCounsellorAccount,
   resetCounsellorPin,
+  registerStaff,
+  loginStaff,
+  forgotPassword,
+  resetPassword,
 };

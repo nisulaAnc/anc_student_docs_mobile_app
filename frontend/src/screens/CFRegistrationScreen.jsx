@@ -83,7 +83,7 @@ export default function CFRegistrationScreen({ navigation }) {
         student_email: studentEmail.trim().toLowerCase(),
         counsellor_name: counsellorName,
       });
-      setAlert({ type: 'success', msg: `Registration submitted. ${counsellorName} has been notified by email.` });
+      setAlert({ type: 'success', msg: `Your account verified. Registration submitted and ${counsellorName} has been notified by email.` });
       setCfNumber(''); setStudentName(''); setStudentEmail(''); setCounsellorName('');
     } catch (e) {
       setAlert({ type: 'error', msg: e.response?.data?.message || e.message });

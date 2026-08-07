@@ -4,8 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
-export default function TopBar({ onBack, rightText }) {
-  const { theme, toggleTheme, colors: COLORS } = useTheme();
+export default function TopBar({ onBack, rightText, onLogin, onRegister }) {
+  const { colors: COLORS } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = createStyles(COLORS);
   return (
@@ -35,13 +35,20 @@ export default function TopBar({ onBack, rightText }) {
         </View>
       ) : <View style={{ flex: 1 }} />}
 
-      <TouchableOpacity onPress={toggleTheme} style={styles.themeToggle}>
-        <Ionicons
-          name={theme === 'dark' ? 'sunny' : 'moon'}
-          size={20}
-          color={theme === 'dark' ? '#FFD700' : COLORS.navy}
-        />
-      </TouchableOpacity>
+      {onLogin && onRegister ? (
+        <View style={styles.authRow}>
+          <TouchableOpacity onPress={onLogin} style={styles.authBtn}>
+            <Text style={styles.authBtnText}>Login</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onRegister} style={[styles.authBtn, styles.authBtnPrimary]}>
+            <Text style={[styles.authBtnText, styles.authBtnPrimaryText]}>Register</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.themeToggle}>
+          <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.navy} />
+        </View>
+      )}
     </View>
   );
 }
@@ -82,4 +89,9 @@ const createStyles = (COLORS) => StyleSheet.create({
     backgroundColor: 'rgba(150,150,150,0.1)',
     alignItems: 'center', justifyContent: 'center',
   },
+  authRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  authBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' },
+  authBtnPrimary: { backgroundColor: '#0A2463', borderColor: '#0A2463' },
+  authBtnText: { fontSize: 13, color: '#0A2463', fontWeight: '700' },
+  authBtnPrimaryText: { color: '#fff' },
 });
