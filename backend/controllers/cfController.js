@@ -147,6 +147,16 @@ const verifyCfPin = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Incorrect Counsellor PIN. Access denied.' });
     }
 
+    const emailForTwoFactor = staffEmail || counsellor?.email || null;
+    if (emailForTwoFactor) {
+      const storeEntry = getTwoFactorEntry(emailForTwoFactor);
+      if (storeEntry?.enabled && storeEntry?.secret) {
+        if (!otp || !verifyTotp(storeEntry.secret, otp)) {
+          return res.status(401).json({ success: false, message: 'Invalid authenticator code.' });
+        }
+      }
+    }
+
     const session = buildCounsellorSession(counsellor);
     const token = issueCounsellorToken(counsellor);
     return res.json({
