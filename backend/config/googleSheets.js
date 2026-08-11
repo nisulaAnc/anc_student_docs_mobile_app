@@ -31,6 +31,10 @@ const SUBMISSION_DOC_COLUMNS = [
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
+if (!SPREADSHEET_ID) {
+  throw new Error('SPREADSHEET_ID is not configured. Set the environment variable and restart the server.');
+}
+
 // Sheet tab names (mirrors PHP constants)
 const SHEETS = {
   COUNSELLORS: 'Counsellor List',
@@ -66,8 +70,35 @@ function getAuthClient() {
     });
   }
 
+  const appCreds = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+  if (appCreds) {
+    if (appCreds.startsWith('{') || appCreds.startsWith('[')) {
+      try {
+        const creds = JSON.parse(appCreds);
+        return new google.auth.GoogleAuth({
+          credentials: creds,
+          scopes,
+        });
+      } catch (err) {
+        throw new Error('GOOGLE_APPLICATION_CREDENTIALS contains invalid JSON.');
+      }
+    }
+
+    const resolvedPath = path.resolve(process.cwd(), appCreds);
+    if (fs.existsSync(resolvedPath)) {
+      return new google.auth.GoogleAuth({
+        keyFile: resolvedPath,
+        scopes,
+      });
+    }
+
+    throw new Error(
+      `GOOGLE_APPLICATION_CREDENTIALS file not found at ${resolvedPath}.`
+    );
+  }
+
   throw new Error(
-    'Google credentials are not configured. Set GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY in env, or provide credentials.json locally.'
+    'Google credentials are not configured. Set GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY in env, provide credentials.json locally, or set GOOGLE_APPLICATION_CREDENTIALS to a valid file path or JSON content.'
   );
 }
 
