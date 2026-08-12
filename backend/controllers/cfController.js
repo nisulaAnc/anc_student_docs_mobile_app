@@ -95,7 +95,7 @@ const registerCF = async (req, res) => {
   res.json({ success: true, message: 'Registration submitted. Counsellor has been notified.', token });
 };
 
-// GET /api/cf/counsellor/token-info?token=xxx
+// GET /api/cf/counsellor/token-info?token=xxxx
 const getCounsellorTokenInfo = async (req, res) => {
   const { token } = req.query;
   const cfToken = await CfToken.findOne({ token });
