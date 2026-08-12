@@ -13,8 +13,13 @@ const { setResetToken, getResetEntry, clearResetEntry } = require('../utils/pass
 
 // GET /api/cf/counsellors
 const getCounsellorList = async (req, res) => {
-  const counsellors = await getCounsellors();
-  res.json({ success: true, data: counsellors });
+  try {
+    const counsellors = await getCounsellors();
+    res.json({ success: true, data: counsellors });
+  } catch (err) {
+    console.error('Error fetching counsellors:', err.message);
+    res.status(500).json({ success: false, message: 'Server error: ' + err.message });
+  }
 };
 
 // POST /api/cf/register
