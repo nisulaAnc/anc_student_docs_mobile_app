@@ -621,4 +621,6 @@ module.exports = {
   loginStaff,
   forgotPassword,
   resetPassword,
+  setupTwoFactor,
+  enableTwoFactor,
 };
