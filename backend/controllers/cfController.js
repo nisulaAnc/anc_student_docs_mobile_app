@@ -438,21 +438,52 @@ const registerStaff = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Name, email and password are required.' });
     }
 
-    const result = await upsertCounsellorRecord({ name, email, password, role });
+    // Validate role
+    const normalizedRole = String(role || '').trim().toLowerCase();
+    const validRoles = ['center function', 'counsellor'];
+    if (role && !validRoles.some((r) => normalizedRole.includes(r))) {
+      return res.status(400).json({ success: false, message: `Invalid role "${role}". Must be Center Function or Counsellor.` });
+    }
 
-    // send verification/confirmation email
+    // Check if counsellor exists in the sheet
+    const counsellors = await getCounsellors();
+    const existing = counsellors.find(
+      (c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase()
+    );
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'This email is not in the approved staff list. Contact the administrator.' });
+    }
+
+    const result = await upsertCounsellorRecord({ name: existing.name, email, password, role: existing.role || role });
+    const finalRole = existing.role || role || 'counsellor';
+
+    // Send verification/confirmation email
     try {
       const html = emailHtml(
-        'Account Verified',
-        `<p>Dear <strong>${name}</strong>,<br/><br/>Your account has been created and verified. You can now access the ANC Student Docs mobile app.</p>`
+        'Your Account is Verified',
+        `<p style="font-size:15px;color:#334155;line-height:1.8;">Dear <strong>${existing.name}</strong>,<br/><br/>
+        Your account has been successfully created and <strong style="color:#16A34A;">verified</strong>.
+        You can now log in to the <strong>ANC Student Docs</strong> mobile app using your registered credentials.<br/><br/>
+        <strong>Name:</strong> ${existing.name}<br/>
+        <strong>Email:</strong> ${email}<br/>
+        <strong>Role:</strong> ${finalRole}<br/><br/>
+        If you did not create this account, please contact the administrator immediately.</p>`
       );
-      await sendEmail(email, 'ANC Student Docs – Your account verified', html);
+      await sendEmail(email, 'ANC Student Docs - Your Account is Verified', html);
     } catch (e) {
       console.error('Email send error (registerStaff):', e.message);
     }
 
-    const token = issueCounsellorToken({ name, email });
-    return res.json({ success: true, message: 'Your account verified.', token, email, created: result.created });
+    const token = issueCounsellorToken({ name: existing.name, email, role: finalRole });
+    return res.json({
+      success: true,
+      message: 'Your account has been verified. Welcome to ANC Student Docs!',
+      token,
+      email,
+      role: finalRole,
+      counsellor: { name: existing.name, email, role: finalRole },
+      created: result.created,
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message || 'Failed to register account.' });
   }
@@ -467,22 +498,38 @@ const loginStaff = async (req, res) => {
 
     const counsellors = await getCounsellors();
     const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
-    if (!existing) return res.status(404).json({ success: false, message: 'Account not found.' });
+    if (!existing) return res.status(404).json({ success: false, message: 'Account not found. Please register first.' });
 
     const stored = String(existing.pin || existing.password || '').trim();
-    if (!stored || stored !== String(password).trim()) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+    if (!stored) {
+      return res.status(401).json({ success: false, message: 'No password set. Please register your account first.' });
+    }
+    if (stored !== String(password).trim()) {
+      return res.status(401).json({ success: false, message: 'Incorrect password. Please try again.' });
     }
 
     const two = getTwoFactorEntry(email);
     if (two?.enabled && two?.secret) {
       if (!otp || !verifyTotp(two.secret, otp)) {
-        return res.status(401).json({ success: false, message: 'Authenticator code is required or invalid.' });
+        return res.status(401).json({
+          success: false,
+          message: 'Two-factor authentication code is required or invalid.',
+          requires_2fa: true,
+        });
       }
     }
 
-    const token = issueCounsellorToken(existing);
-    return res.json({ success: true, message: 'Login successful.', token, counsellor: buildCounsellorSession(existing) });
+    const session = buildCounsellorSession(existing);
+    // Attach role so the frontend can redirect to the correct dashboard
+    session.role = existing.role || '';
+    const token = issueCounsellorToken({ ...existing, role: existing.role || '' });
+    return res.json({
+      success: true,
+      message: 'Login successful.',
+      token,
+      counsellor: session,
+      two_fa_enabled: !!(two?.enabled),
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message || 'Login failed.' });
   }
@@ -497,25 +544,30 @@ const forgotPassword = async (req, res) => {
 
     const counsellors = await getCounsellors();
     const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
-    if (!existing) return res.status(404).json({ success: false, message: 'Account not found.' });
+    // Always return success to prevent email enumeration
+    if (!existing) return res.json({ success: true, message: 'If the account exists, a reset email was sent.' });
 
     const token = uuidv4();
     setResetToken(email, token, Date.now() + 1000 * 60 * 60); // 1 hour
 
-    const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
-    const resetUrl = `${BASE_URL}/staff/reset-password?email=${encodeURIComponent(email)}&token=${token}`;
-
     try {
       const html = emailHtml(
-        'Password Reset',
-        `<p>Dear <strong>${existing.name}</strong>,<br/><br/>Click the link below to reset your password (valid for 1 hour):<br/><br/><a href="${resetUrl}">Reset password</a></p>`
+        'Password Reset Request',
+        `<p style="font-size:15px;color:#334155;line-height:1.8;">Dear <strong>${existing.name}</strong>,<br/><br/>
+        We received a request to reset your password for your <strong>ANC Student Docs</strong> account.<br/><br/>
+        Please open the ANC Student Docs app, go to <strong>Forgot Password -> Reset Password</strong>, and enter the following reset code:<br/><br/>
+        <div style="text-align:center;margin:24px 0;">
+          <strong style="font-family:monospace;font-size:22px;color:#0A2463;letter-spacing:4px;display:inline-block;padding:12px 24px;background:#F8FAFC;border:2px solid #E2E8F0;border-radius:10px;">${token}</strong>
+        </div>
+        <strong>This code expires in 1 hour.</strong><br/><br/>
+        If you did not request a password reset, please ignore this email.</p>`
       );
-      await sendEmail(email, 'ANC Student Docs – Password reset', html);
+      await sendEmail(email, 'ANC Student Docs - Password Reset Code', html);
     } catch (e) {
       console.error('Email send error (forgotPassword):', e.message);
     }
 
-    return res.json({ success: true, message: 'Password reset email sent if the account exists.' });
+    return res.json({ success: true, message: 'A password reset code has been sent to your email address.' });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message || 'Unable to process password reset.' });
   }
@@ -540,7 +592,7 @@ const resetPassword = async (req, res) => {
 
     try {
       const html = emailHtml('Password Reset Confirmed', `<p>Your password has been changed successfully.</p>`);
-      await sendEmail(email, 'ANC Student Docs – Password changed', html);
+      await sendEmail(email, 'ANC Student Docs - Password Changed', html);
     } catch (e) {
       console.error('Email send error (resetPassword):', e.message);
     }
