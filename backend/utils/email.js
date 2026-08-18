@@ -68,8 +68,14 @@ async function sendEmail(to, subject, htmlBody) {
   });
 }
 
+// Generate a 6-digit OTP
 function generateOTP() {
-  return String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-module.exports = { sendEmail, otpEmailHtml, emailHtml, generateOTP };
+// Generate a 4-digit OTP (for other uses)
+function generateOTP4() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+module.exports = { sendEmail, otpEmailHtml, emailHtml, generateOTP, generateOTP4 };
