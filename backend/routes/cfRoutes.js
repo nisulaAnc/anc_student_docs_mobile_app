@@ -14,6 +14,7 @@ const {
     resetCounsellorPin,
     setupTwoFactor,
     enableTwoFactor,
+    sendTwoFactorEmailCode,
 } = require('../controllers/cfController');
 
 router.get('/counsellors', getCounsellorList);
@@ -27,6 +28,7 @@ router.post('/staff/reset-password', resetPassword);
 router.post('/counsellor/register', registerCounsellorAccount);
 router.post('/counsellor/reset-pin', resetCounsellorPin);
 router.post('/two-factor/setup', setupTwoFactor);
+router.post('/two-factor/send-email-code', sendTwoFactorEmailCode);
 router.post('/two-factor/enable', enableTwoFactor);
 router.get('/dashboard-stats', getDashboardStats);
 router.post('/send-reminder', sendReminderEmail);

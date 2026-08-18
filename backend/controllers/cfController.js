@@ -4,12 +4,28 @@ const StudentToken = require('../models/StudentToken');
 const Submission = require('../models/Submission');
 const { getCounsellors, sheetAppend, SHEETS, upsertCounsellorRecord } = require('../config/googleSheets');
 const { getDocumentsForProduct } = require('../utils/productDocuments');
-const { sendEmail, emailHtml } = require('../utils/email');
+const { sendEmail, emailHtml, otpEmailHtml, generateOTP } = require('../utils/email');
 const { resolveCounsellorPin, buildCounsellorSession, issueCounsellorToken, verifyCounsellorToken } = require('../utils/counsellorAuth');
 const { resolveCounsellorPinReset } = require('../utils/counsellorSheet');
-const { generateSecret, generateOtpAuthUri, verifyTotp } = require('../utils/twoFactor');
+const { generateSecret, generateOtpAuthUri, verifyTotp, verifyEmailCode } = require('../utils/twoFactor');
 const { getTwoFactorEntry, setTwoFactorEntry } = require('../utils/twoFactorStore');
 const { setResetToken, getResetEntry, clearResetEntry } = require('../utils/passwordResetStore');
+
+const resolveTwoFactorVerification = (entry, otp) => {
+  if (!entry?.enabled) return true;
+  if (!otp) return false;
+  
+  if (entry.secret && verifyTotp(entry.secret, otp)) {
+    return true;
+  }
+  
+  const emailCode = entry.emailCode || entry.email_code;
+  if (emailCode && verifyEmailCode(emailCode, otp)) {
+    return true;
+  }
+  
+  return false;
+};
 
 // GET /api/cf/counsellors
 const getCounsellorList = async (req, res) => {
@@ -156,10 +172,8 @@ const verifyCfPin = async (req, res) => {
     const emailForTwoFactor = staffEmail || counsellor?.email || null;
     if (emailForTwoFactor) {
       const storeEntry = getTwoFactorEntry(emailForTwoFactor);
-      if (storeEntry?.enabled && storeEntry?.secret) {
-        if (!otp || !verifyTotp(storeEntry.secret, otp)) {
-          return res.status(401).json({ success: false, message: 'Invalid authenticator code.' });
-        }
+      if (storeEntry?.enabled && !resolveTwoFactorVerification(storeEntry, otp)) {
+        return res.status(401).json({ success: false, message: 'Invalid verification code.' });
       }
     }
 
@@ -182,10 +196,8 @@ const verifyCfPin = async (req, res) => {
 
     if (staffEmail) {
       const storeEntry = getTwoFactorEntry(staffEmail);
-      if (storeEntry?.enabled && storeEntry?.secret) {
-        if (!otp || !verifyTotp(storeEntry.secret, otp)) {
-          return res.status(401).json({ success: false, message: 'Invalid authenticator code.' });
-        }
+      if (storeEntry?.enabled && !resolveTwoFactorVerification(storeEntry, otp)) {
+        return res.status(401).json({ success: false, message: 'Invalid verification code.' });
       }
     }
 
@@ -224,16 +236,160 @@ const setupTwoFactor = async (req, res) => {
   }
 };
 
+// POST /api/cf/two-factor/send-email-code
+const sendTwoFactorEmailCode = async (req, res) => {
+  try {
+    const { email, name } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required.',
+      });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    // Check whether counsellor exists
+    const counsellors = await getCounsellors();
+    const existing = counsellors.find(
+      (c) =>
+        String(c.email || '').trim().toLowerCase() === normalizedEmail
+    );
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Counsellor not found.',
+      });
+    }
+
+    // Generate 6-digit OTP
+    const code = generateOTP();
+
+    // Get previous 2FA data
+    const previous = getTwoFactorEntry(normalizedEmail) || {};
+
+    // Store OTP temporarily
+    setTwoFactorEntry(normalizedEmail, {
+      ...previous,
+      enabled: false,
+      method: 'email',
+      secret: previous.secret || '',
+      emailCode: code,
+      email_code: code,
+      emailSentAt: new Date().toISOString(),
+    });
+
+    // Create email HTML - use a simple HTML template since otpEmailHtml might not exist
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body { font-family: Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }
+          .container { max-width: 500px; margin: 0 auto; background: #ffffff; border-radius: 12px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+          .header { text-align: center; border-bottom: 2px solid #0A2463; padding-bottom: 20px; margin-bottom: 20px; }
+          .header h1 { color: #0A2463; margin: 0; font-size: 22px; }
+          .code-box { background: #f0f4ff; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0; }
+          .code { font-size: 32px; font-weight: bold; color: #0A2463; letter-spacing: 8px; }
+          .footer { text-align: center; font-size: 12px; color: #888; margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px; }
+          .info { color: #555; line-height: 1.6; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>enableTwoFactorTwo-Factor Authentication</h1>
+          </div>
+          <p style="font-size:16px;color:#333;">Hello <strong>${name || existing.name || 'User'}</strong>,</p>
+          <p class="info">You have requested to enable Two-Factor Authentication for your ANC Student Docs account.</p>
+          <p class="info">Please use the following 6-digit verification code to complete the setup:</p>
+          <div class="code-box">
+            <div class="code">${code}</div>
+          </div>
+          <p style="font-size:14px;color:#666;">This code will expire in <strong>10 minutes</strong>.</p>
+          <p style="font-size:14px;color:#666;">If you did not request this code, please ignore this email.</p>
+          <div class="footer">
+            <p>ANC Student Docs · Secure Document Portal</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Send OTP email
+    await sendEmail(
+      normalizedEmail,
+      'ANC Student Docs – Your 2FA Verification Code',
+      html
+    );
+
+    return res.json({
+      success: true,
+      message: 'A 6-digit code has been sent to your email.',
+    });
+  } catch (err) {
+    console.error('Failed to send 2FA email:', err);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to send the 2FA code. Please try again.',
+    });
+  }
+};
+
+
 // POST /api/cf/two-factor/enable
 const enableTwoFactor = async (req, res) => {
   try {
-    const { email, secret, otp, enabled } = req.body;
-    if (!email || !secret || !otp) {
-      return res.status(400).json({ success: false, message: 'Email, secret and OTP are required.' });
+    const { email, secret, otp, enabled, method } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required.',
+      });
     }
 
-    if (!verifyTotp(secret, otp)) {
-      return res.status(401).json({ success: false, message: 'The authenticator code is invalid.' });
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const isEmailMethod = String(method || '').trim().toLowerCase() === 'email';
+    const shouldEnable = enabled !== false;
+    const existingEntry = getTwoFactorEntry(normalizedEmail) || {};
+
+    // If enabling via email method
+    if (shouldEnable && isEmailMethod) {
+      if (!otp) {
+        return res.status(400).json({
+          success: false,
+          message: 'The email verification code is required.',
+        });
+      }
+
+      const emailCode = existingEntry.emailCode || existingEntry.email_code;
+      if (!emailCode || !verifyEmailCode(emailCode, otp)) {
+        return res.status(401).json({
+          success: false,
+          message: 'The email verification code is invalid.',
+        });
+      }
+    }
+    // If enabling via TOTP authenticator app
+    else if (shouldEnable && !isEmailMethod) {
+      if (!secret || !otp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Secret and OTP are required.',
+        });
+      }
+
+      if (!verifyTotp(secret, otp)) {
+        return res.status(401).json({
+          success: false,
+          message: 'The authenticator code is invalid.',
+        });
+      }
     }
 
     const counsellors = await getCounsellors();
@@ -242,22 +398,51 @@ const enableTwoFactor = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Counsellor not found.' });
     }
 
+    const nextSecret = secret || existingEntry.secret || '';
     const result = await upsertCounsellorRecord({
       name: existing.name,
       email,
       pin: existing.pin,
-      two_factor_enabled: enabled !== false,
-      two_factor_secret: secret,
+      two_factor_enabled: shouldEnable,
+      two_factor_secret: nextSecret,
     });
 
+    // Update store
     setTwoFactorEntry(email, {
-      enabled: enabled !== false,
-      secret,
+      ...existingEntry,
+      enabled: shouldEnable,
+      secret: nextSecret,
+      method: isEmailMethod ? 'email' : 'totp',
+      // Clear email code after successful verification
+      emailCode: shouldEnable ? '' : existingEntry.emailCode || '',
+      email_code: shouldEnable ? '' : existingEntry.email_code || '',
     });
 
-    return res.json({ success: true, message: enabled === false ? '2FA disabled.' : '2FA enabled.', data: { created: result.created, email } });
+    // Reissue the session token so the client's stored JWT reflects the new 2FA state.
+    // Without this, the app re-decodes the OLD token on next screen focus and the
+    // twoFactorEnabled flag reverts, making it look like 2FA "auto disabled".
+    const newToken = issueCounsellorToken({
+      ...existing,
+      lastLogin: existing.lastLogin || new Date().toISOString(),
+      twoFactorEnabled: shouldEnable,
+    });
+
+    return res.json({
+      success: true,
+      message: shouldEnable ? '2FA enabled.' : '2FA disabled.',
+      token: newToken,
+      data: {
+        created: result.created,
+        email,
+        method: isEmailMethod ? 'email' : 'totp'
+      }
+    });
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message || 'Unable to update 2FA setting.' });
+    console.error('Failed to update 2FA:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Unable to update 2FA.',
+    });
   }
 };
 
@@ -443,10 +628,17 @@ const registerStaff = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Name, email and password are required.' });
     }
 
+    const rawRole = String(role || '').trim();
+    const normalizedRole = rawRole.toLowerCase();
+    const resolvedRole = normalizedRole.includes('center function') || normalizedRole === 'cf'
+      ? 'Center Function'
+      : normalizedRole.includes('counsellor')
+        ? 'Counsellor'
+        : null;
+
     // Validate role
-    const normalizedRole = String(role || '').trim().toLowerCase();
     const validRoles = ['center function', 'counsellor'];
-    if (role && !validRoles.some((r) => normalizedRole.includes(r))) {
+    if (!resolvedRole && rawRole) {
       return res.status(400).json({ success: false, message: `Invalid role "${role}". Must be Center Function or Counsellor.` });
     }
 
@@ -459,8 +651,8 @@ const registerStaff = async (req, res) => {
       return res.status(404).json({ success: false, message: 'This email is not in the approved staff list. Contact the administrator.' });
     }
 
-    const result = await upsertCounsellorRecord({ name: existing.name, email, password, role: existing.role || role });
-    const finalRole = existing.role || role || 'counsellor';
+    const result = await upsertCounsellorRecord({ name: existing.name, email, password, role: existing.role || resolvedRole || 'Counsellor' });
+    const finalRole = existing.role || resolvedRole || 'Counsellor';
 
     // Send verification/confirmation email
     try {
@@ -479,14 +671,26 @@ const registerStaff = async (req, res) => {
       console.error('Email send error (registerStaff):', e.message);
     }
 
-    const token = issueCounsellorToken({ name: existing.name, email, role: finalRole });
+    const token = issueCounsellorToken({
+      name: existing.name,
+      email,
+      role: finalRole,
+      lastLogin: new Date().toISOString(),
+      twoFactorEnabled: !!(existing.two_factor_enabled),
+    });
     return res.json({
       success: true,
       message: 'Your account has been verified. Welcome to ANC Student Docs!',
       token,
       email,
       role: finalRole,
-      counsellor: { name: existing.name, email, role: finalRole },
+      counsellor: {
+        name: existing.name,
+        email,
+        role: finalRole,
+        lastLogin: new Date().toISOString(),
+        twoFactorEnabled: !!(existing.two_factor_enabled),
+      },
       created: result.created,
     });
   } catch (err) {
@@ -496,10 +700,20 @@ const registerStaff = async (req, res) => {
 
 // POST /api/cf/staff/login
 // Body: { email, password, otp }
+// POST /api/cf/staff/login
+// Body: { email, password, otp }
 const loginStaff = async (req, res) => {
   try {
-    const { email, password, otp } = req.body;
+    const { email, password, otp, role } = req.body;
     if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password are required.' });
+
+    const requestedRole = String(role || '').trim();
+    const normalizedRequestedRole = requestedRole.toLowerCase();
+    const resolvedRole = normalizedRequestedRole.includes('center function') || normalizedRequestedRole === 'cf'
+      ? 'Center Function'
+      : normalizedRequestedRole.includes('counsellor')
+        ? 'Counsellor'
+        : null;
 
     const counsellors = await getCounsellors();
     const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
@@ -514,20 +728,41 @@ const loginStaff = async (req, res) => {
     }
 
     const two = getTwoFactorEntry(email);
-    if (two?.enabled && two?.secret) {
-      if (!otp || !verifyTotp(two.secret, otp)) {
+    
+    // Check if 2FA is enabled
+    if (two?.enabled) {
+      // If OTP is not provided, return requires_2fa flag
+      if (!otp) {
         return res.status(401).json({
           success: false,
-          message: 'Two-factor authentication code is required or invalid.',
+          message: 'Two-factor authentication code is required.',
+          requires_2fa: true,
+        });
+      }
+      
+      // Verify the OTP
+      if (!resolveTwoFactorVerification(two, otp)) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid verification code. Please try again.',
           requires_2fa: true,
         });
       }
     }
 
-    const session = buildCounsellorSession(existing);
-    // Attach role so the frontend can redirect to the correct dashboard
-    session.role = existing.role || '';
-    const token = issueCounsellorToken({ ...existing, role: existing.role || '' });
+    const sessionRole = existing.role || resolvedRole || 'Counsellor';
+    const session = buildCounsellorSession({
+      ...existing,
+      role: sessionRole,
+      lastLogin: new Date().toISOString(),
+      twoFactorEnabled: !!(two?.enabled),
+    });
+    const token = issueCounsellorToken({
+      ...existing,
+      role: sessionRole,
+      lastLogin: new Date().toISOString(),
+      twoFactorEnabled: !!(two?.enabled),
+    });
     return res.json({
       success: true,
       message: 'Login successful.',
@@ -622,5 +857,6 @@ module.exports = {
   forgotPassword,
   resetPassword,
   setupTwoFactor,
+  sendTwoFactorEmailCode,
   enableTwoFactor,
 };
