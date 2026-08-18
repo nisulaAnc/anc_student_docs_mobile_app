@@ -10,6 +10,17 @@ function generateSecret(length = 20) {
   return secret;
 }
 
+function generateEmailCode() {
+  return String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+}
+
+function verifyEmailCode(expectedCode, enteredCode) {
+  const expected = String(expectedCode || '').trim();
+  const entered = String(enteredCode || '').trim();
+  if (!expected || !entered || expected.length !== 6 || entered.length !== 6) return false;
+  return expected === entered;
+}
+
 function base32ToBytes(secret) {
   const normalized = String(secret || '').toUpperCase().replace(/=+$/g, '');
   let bits = '';
@@ -75,6 +86,8 @@ function generateOtpAuthUri(label, secret, issuer = 'ANC Student Docs') {
 
 module.exports = {
   generateSecret,
+  generateEmailCode,
+  verifyEmailCode,
   generateTotp,
   verifyTotp,
   generateOtpAuthUri,
