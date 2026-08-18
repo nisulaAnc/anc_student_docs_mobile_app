@@ -301,7 +301,7 @@ const sendTwoFactorEmailCode = async (req, res) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>enableTwoFactorTwo-Factor Authentication</h1>
+            <h1>Two-Factor Authentication</h1>
           </div>
           <p style="font-size:16px;color:#333;">Hello <strong>${name || existing.name || 'User'}</strong>,</p>
           <p class="info">You have requested to enable Two-Factor Authentication for your ANC Student Docs account.</p>
