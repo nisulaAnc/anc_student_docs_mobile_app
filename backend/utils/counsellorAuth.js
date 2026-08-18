@@ -28,10 +28,16 @@ function resolveCounsellorPin(counsellor, fallbackPin = '112233') {
 }
 
 function buildCounsellorSession(counsellor) {
+    const normalizedRole = counsellor?.role || '';
+    const lastLogin = counsellor?.lastLogin || counsellor?.last_login || new Date().toISOString();
+
     return {
         id: counsellor?.email || counsellor?.name || 'counsellor',
         name: counsellor?.name || '',
         email: counsellor?.email || '',
+        role: normalizedRole,
+        lastLogin,
+        twoFactorEnabled: !!(counsellor?.twoFactorEnabled || counsellor?.two_fa_enabled),
     };
 }
 
