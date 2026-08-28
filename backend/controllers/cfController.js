@@ -4,7 +4,7 @@ const StudentToken = require('../models/StudentToken');
 const Submission = require('../models/Submission');
 const { getCounsellors, sheetAppend, SHEETS, upsertCounsellorRecord } = require('../config/googleSheets');
 const { getDocumentsForProduct } = require('../utils/productDocuments');
-const { sendEmail, emailHtml, otpEmailHtml, generateOTP } = require('../utils/email');
+const { sendEmail, getNotificationRecipients, emailHtml, otpEmailHtml, generateOTP } = require('../utils/email');
 const { resolveCounsellorPin, buildCounsellorSession, issueCounsellorToken, verifyCounsellorToken } = require('../utils/counsellorAuth');
 const { resolveCounsellorPinReset } = require('../utils/counsellorSheet');
 const { generateSecret, generateOtpAuthUri, verifyTotp, verifyEmailCode } = require('../utils/twoFactor');
@@ -39,11 +39,15 @@ const getCounsellorList = async (req, res) => {
 };
 
 // POST /api/cf/register
-// Body: { cf_number, student_name, student_email, counsellor_name }
+// Body: { cf_number, student_name, student_email, counsellor_name, university }
 const registerCF = async (req, res) => {
-  const { cf_number, student_name, student_email, counsellor_name } = req.body;
-  if (!cf_number || !student_name || !student_email || !counsellor_name) {
+  const { cf_number, student_name, student_email, counsellor_name, university = 'ANC' } = req.body;
+  const normalizedUniversity = String(university).trim().toUpperCase();
+  if (!cf_number || !student_name || !student_email || !counsellor_name || !normalizedUniversity) {
     return res.status(400).json({ success: false, message: 'All fields are required.' });
+  }
+  if (!['ANC', 'UWL'].includes(normalizedUniversity)) {
+    return res.status(400).json({ success: false, message: 'University must be ANC or UWL.' });
   }
 
   const counsellors = await getCounsellors();
@@ -62,6 +66,7 @@ const registerCF = async (req, res) => {
     cf_number,
     student_name,
     student_email,
+    university: normalizedUniversity,
     counsellor_name: counsellor.name,
     counsellor_email: counsellor.email,
   });
@@ -71,7 +76,7 @@ const registerCF = async (req, res) => {
     await sheetAppend(SHEETS.CF_TOKENS, [
       token, cf_number, student_name, student_email,
       counsellor.name, counsellor.email,
-      new Date().toISOString(), 'pending', '', '', 'otp_request',
+      new Date().toISOString(), 'pending', '', '', 'otp_request', normalizedUniversity,
     ]);
   } catch (err) {
     console.error('Sheet sync error (CF):', err.message);
@@ -88,7 +93,8 @@ const registerCF = async (req, res) => {
       A new student registration requires your action.<br><br>
       <strong>Student Name:</strong> ${student_name}<br>
       <strong>Student Email:</strong> ${student_email}<br>
-      <strong>CF Number:</strong> ${cf_number}<br><br>
+      <strong>CF Number:</strong> ${cf_number}<br>
+      <strong>University:</strong> ${normalizedUniversity}<br><br>
       Please scan the QR code below using the <strong>ANC Student Docs Mobile App</strong> or click the button to verify and select the student's programme.
     </p>
     <div style="text-align:center;margin:24px 0;">
@@ -103,7 +109,7 @@ const registerCF = async (req, res) => {
   );
 
   try {
-    await sendEmail(counsellor.email, 'ANC Student Docs – Action Required', html);
+    await sendEmail(getNotificationRecipients(counsellor.email, normalizedUniversity), 'ANC Student Docs – Action Required', html);
   } catch (err) {
     console.error('Email send error:', err.message);
   }
@@ -171,7 +177,7 @@ const verifyCfPin = async (req, res) => {
 
     const emailForTwoFactor = staffEmail || counsellor?.email || null;
     if (emailForTwoFactor) {
-      const storeEntry = getTwoFactorEntry(emailForTwoFactor);
+      const storeEntry = await getTwoFactorEntry(emailForTwoFactor);
       if (storeEntry?.enabled && !resolveTwoFactorVerification(storeEntry, otp)) {
         return res.status(401).json({ success: false, message: 'Invalid verification code.' });
       }
@@ -195,7 +201,7 @@ const verifyCfPin = async (req, res) => {
     }
 
     if (staffEmail) {
-      const storeEntry = getTwoFactorEntry(staffEmail);
+      const storeEntry = await getTwoFactorEntry(staffEmail);
       if (storeEntry?.enabled && !resolveTwoFactorVerification(storeEntry, otp)) {
         return res.status(401).json({ success: false, message: 'Invalid verification code.' });
       }
@@ -268,17 +274,15 @@ const sendTwoFactorEmailCode = async (req, res) => {
     const code = generateOTP();
 
     // Get previous 2FA data
-    const previous = getTwoFactorEntry(normalizedEmail) || {};
+    const previous = (await getTwoFactorEntry(normalizedEmail)) || {};
 
-    // Store OTP temporarily
-    setTwoFactorEntry(normalizedEmail, {
-      ...previous,
-      enabled: false,
+    // Store OTP temporarily in MongoDB
+    await setTwoFactorEntry(normalizedEmail, {
+      enabled: previous.enabled || false,
       method: 'email',
       secret: previous.secret || '',
       emailCode: code,
-      email_code: code,
-      emailSentAt: new Date().toISOString(),
+      emailSentAt: new Date(),
     });
 
     // Create email HTML - use a simple HTML template since otpEmailHtml might not exist
@@ -356,7 +360,7 @@ const enableTwoFactor = async (req, res) => {
     const normalizedEmail = String(email).trim().toLowerCase();
     const isEmailMethod = String(method || '').trim().toLowerCase() === 'email';
     const shouldEnable = enabled !== false;
-    const existingEntry = getTwoFactorEntry(normalizedEmail) || {};
+    const existingEntry = (await getTwoFactorEntry(normalizedEmail)) || {};
 
     // If enabling via email method
     if (shouldEnable && isEmailMethod) {
@@ -367,7 +371,7 @@ const enableTwoFactor = async (req, res) => {
         });
       }
 
-      const emailCode = existingEntry.emailCode || existingEntry.email_code;
+      const emailCode = existingEntry.emailCode;
       if (!emailCode || !verifyEmailCode(emailCode, otp)) {
         return res.status(401).json({
           success: false,
@@ -407,15 +411,13 @@ const enableTwoFactor = async (req, res) => {
       two_factor_secret: nextSecret,
     });
 
-    // Update store
-    setTwoFactorEntry(email, {
-      ...existingEntry,
+    // Update store (clear the one-time email code after verification)
+    await setTwoFactorEntry(email, {
       enabled: shouldEnable,
       secret: nextSecret,
       method: isEmailMethod ? 'email' : 'totp',
-      // Clear email code after successful verification
-      emailCode: shouldEnable ? '' : existingEntry.emailCode || '',
-      email_code: shouldEnable ? '' : existingEntry.email_code || '',
+      emailCode: '',
+      emailSentAt: null,
     });
 
     // Reissue the session token so the client's stored JWT reflects the new 2FA state.
@@ -426,6 +428,23 @@ const enableTwoFactor = async (req, res) => {
       lastLogin: existing.lastLogin || new Date().toISOString(),
       twoFactorEnabled: shouldEnable,
     });
+
+    // Send email notification about 2FA state change
+    try {
+      const subject = shouldEnable ? 'ANC Student Docs - 2FA Enabled' : 'ANC Student Docs - 2FA Disabled';
+      const actionText = shouldEnable ? 'enabled' : 'disabled';
+      const html = emailHtml(
+        'Security Notice',
+        `<p style="font-size:15px;color:#334155;line-height:1.7;">
+          Dear <strong>${existing.name || 'User'}</strong>,<br><br>
+          This is a security notification to inform you that Two-Factor Authentication (2FA) was recently <strong>${actionText}</strong> on your account.<br><br>
+          If you did not authorize this change, please contact the administrator immediately.
+        </p>`
+      );
+      await sendEmail(email, subject, html);
+    } catch (e) {
+      console.error('Failed to send 2FA status email:', e);
+    }
 
     return res.json({
       success: true,
@@ -611,7 +630,11 @@ const sendReminderEmail = async (req, res) => {
       studentUrl
     );
 
-    await sendEmail(studentToken.student_email, 'ANC Student Docs – Reminder: Pending Documents', html);
+    await sendEmail(
+      getNotificationRecipients(studentToken.student_email, studentToken.university),
+      'ANC Student Docs – Reminder: Pending Documents',
+      html
+    );
 
     res.json({ success: true, message: `Reminder email successfully sent to ${studentToken.student_email}.` });
   } catch (err) {
@@ -649,6 +672,14 @@ const registerStaff = async (req, res) => {
     );
     if (!existing) {
       return res.status(404).json({ success: false, message: 'This email is not in the approved staff list. Contact the administrator.' });
+    }
+
+    const existingPassword = String(existing.pin || existing.password || '').trim();
+    if (existingPassword) {
+      return res.status(409).json({
+        success: false,
+        message: 'This staff account is already registered. Please sign in instead.',
+      });
     }
 
     const result = await upsertCounsellorRecord({ name: existing.name, email, password, role: existing.role || resolvedRole || 'Counsellor' });
@@ -727,25 +758,46 @@ const loginStaff = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Incorrect password. Please try again.' });
     }
 
-    const two = getTwoFactorEntry(email);
-    
+    const two = await getTwoFactorEntry(email);
+
     // Check if 2FA is enabled
     if (two?.enabled) {
-      // If OTP is not provided, return requires_2fa flag
+      const twoFaMethod = two.method || 'email';
+
+      // If OTP is not provided, auto-send email OTP (email method only) then request code
       if (!otp) {
+        if (twoFaMethod === 'email') {
+          // Auto-generate and email a login OTP
+          try {
+            const code = generateOTP();
+            await setTwoFactorEntry(email, {
+              emailCode: code,
+              emailSentAt: new Date(),
+            });
+            const html = otpEmailHtml(existing.name || email, code, 'staff');
+            await sendEmail(email, 'ANC Student Docs – Your Login Verification Code', html);
+          } catch (emailErr) {
+            console.error('Login OTP email error:', emailErr.message);
+            // Don't block login attempt — client can resend
+          }
+        }
         return res.status(401).json({
           success: false,
-          message: 'Two-factor authentication code is required.',
+          message: twoFaMethod === 'email'
+            ? 'A 6-digit code has been sent to your email. Please enter it below.'
+            : 'Enter the 6-digit code from your authenticator app.',
           requires_2fa: true,
+          two_fa_method: twoFaMethod,
         });
       }
-      
+
       // Verify the OTP
       if (!resolveTwoFactorVerification(two, otp)) {
         return res.status(401).json({
           success: false,
           message: 'Invalid verification code. Please try again.',
           requires_2fa: true,
+          two_fa_method: twoFaMethod,
         });
       }
     }
@@ -772,6 +824,44 @@ const loginStaff = async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message || 'Login failed.' });
+  }
+};
+
+// POST /api/cf/staff/send-login-otp
+// Body: { email }
+// Resend a login-time 2FA OTP without going through the full login flow.
+const sendLoginOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const counsellors = await getCounsellors();
+    const existing = counsellors.find(
+      (c) => String(c.email || '').trim().toLowerCase() === normalizedEmail
+    );
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Account not found.' });
+    }
+
+    const two = await getTwoFactorEntry(normalizedEmail);
+    if (!two?.enabled || two.method !== 'email') {
+      return res.status(400).json({ success: false, message: '2FA email is not enabled for this account.' });
+    }
+
+    const code = generateOTP();
+    await setTwoFactorEntry(normalizedEmail, {
+      emailCode: code,
+      emailSentAt: new Date(),
+    });
+
+    const html = otpEmailHtml(existing.name || normalizedEmail, code, 'staff');
+    await sendEmail(normalizedEmail, 'ANC Student Docs – Your Login Verification Code', html);
+
+    return res.json({ success: true, message: 'A new 6-digit code has been sent to your email.' });
+  } catch (err) {
+    console.error('sendLoginOtp error:', err.message);
+    return res.status(500).json({ success: false, message: 'Unable to send code. Please try again.' });
   }
 };
 
@@ -854,6 +944,7 @@ module.exports = {
   resetCounsellorPin,
   registerStaff,
   loginStaff,
+  sendLoginOtp,
   forgotPassword,
   resetPassword,
   setupTwoFactor,

@@ -2,7 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const CfToken = require('../models/CfToken');
 const StudentToken = require('../models/StudentToken');
 const { getProgramsDetailed, getProgramDetailsByLabel, sheetAppend, SHEETS } = require('../config/googleSheets');
-const { sendEmail, emailHtml } = require('../utils/email');
+const { sendEmail, getNotificationRecipients, emailHtml } = require('../utils/email');
 
 // GET /api/counsellor/programs
 const getPrograms = async (req, res) => {
@@ -40,6 +40,7 @@ const selectProgram = async (req, res) => {
     cf_number: cfToken.cf_number,
     student_name: cfToken.student_name,
     student_email: cfToken.student_email,
+    university: cfToken.university || 'ANC',
     counsellor_name: cfToken.counsellor_name,
     counsellor_email: cfToken.counsellor_email,
     program: programDetail.label,
@@ -52,7 +53,7 @@ const selectProgram = async (req, res) => {
     await sheetAppend(SHEETS.STUDENT_TOKENS, [
       studentToken, cfToken.cf_number, cfToken.student_name, cfToken.student_email,
       cfToken.counsellor_name, programDetail.label, programDetail.description || '', programDetail.product_code,
-      new Date().toISOString(), 'pending', '', '', 'otp_request',
+      new Date().toISOString(), 'pending', '', '', 'otp_request', cfToken.university || 'ANC',
     ]);
   } catch (err) {
     console.error('Sheet sync error (StudentToken):', err.message);
@@ -82,7 +83,11 @@ const selectProgram = async (req, res) => {
   );
 
   try {
-    await sendEmail(cfToken.student_email, 'ANC Student Docs – Submit Your Documents', html);
+    await sendEmail(
+      getNotificationRecipients(cfToken.student_email, cfToken.university),
+      'ANC Student Docs – Submit Your Documents',
+      html
+    );
   } catch (err) {
     console.error('Email send error:', err.message);
   }

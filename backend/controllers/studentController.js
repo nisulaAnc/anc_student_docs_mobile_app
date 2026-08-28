@@ -2,7 +2,7 @@ const StudentToken = require('../models/StudentToken');
 const Submission = require('../models/Submission');
 const { getDocumentsForProduct } = require('../utils/productDocuments');
 const { sheetAppend, sheetUpdateRow, sheetRead, SHEETS, getCounsellors, uploadFileToDrive, SUBMISSION_DOC_COLUMNS } = require('../config/googleSheets');
-const { sendEmail, emailHtml } = require('../utils/email');
+const { sendEmail, getNotificationRecipients, emailHtml } = require('../utils/email');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const { buildUploadFileName } = require('../utils/uploadNaming');
@@ -318,7 +318,7 @@ const submitDocuments = async (req, res) => {
 
     try {
       await sendEmail(
-        studentToken.student_email,
+        getNotificationRecipients(studentToken.student_email, studentToken.university),
         'ANC Student Docs – Incomplete Submission: Action Required',
         incompleteStudentHtml
       );
@@ -350,7 +350,7 @@ const submitDocuments = async (req, res) => {
           </p>`
         );
         await sendEmail(
-          counsellor.email,
+          getNotificationRecipients(counsellor.email, studentToken.university),
           `ANC Student Docs – INCOMPLETE Submission: ${studentToken.student_name}`,
           counsellorAlertHtml
         );
@@ -380,7 +380,11 @@ const submitDocuments = async (req, res) => {
     <ul style="color:#334155;font-size:14px;line-height:2;">${docList}${agreementCloudinaryUrl ? '<li>Agreement (signed)</li>' : ''}</ul>`
   );
   try {
-    await sendEmail(studentToken.student_email, 'ANC Student Docs – Submission Confirmed', studentHtml);
+    await sendEmail(
+      getNotificationRecipients(studentToken.student_email, studentToken.university),
+      'ANC Student Docs – Submission Confirmed',
+      studentHtml
+    );
   } catch (err) {
     console.error('Confirmation email error:', err.message);
   }
@@ -408,7 +412,11 @@ const submitDocuments = async (req, res) => {
         <ul style="color:#334155;font-size:14px;line-height:2;">${uploadedDocList}${hasAgreement ? '<li>Agreement (signed)</li>' : ''}</ul>
         <p style="font-size:13px;color:#64748B;margin-top:20px;">Please log in to the admin panel to review the submitted files.</p>`
       );
-      await sendEmail(counsellor.email, `ANC Student Docs – ${studentToken.student_name} Submitted Documents`, counsellorHtml);
+      await sendEmail(
+        getNotificationRecipients(counsellor.email, studentToken.university),
+        `ANC Student Docs – ${studentToken.student_name} Submitted Documents`,
+        counsellorHtml
+      );
     } else {
       console.log(`Counsellor email not found for: ${studentToken.counsellor_name}`);
     }
@@ -437,7 +445,11 @@ const submitDocuments = async (req, res) => {
         <ul style="color:#334155;font-size:14px;line-height:2;">${uploadedDocList}${hasAgreement ? '<li>Agreement (signed)</li>' : ''}</ul>
         <p style="font-size:13px;color:#64748B;margin-top:20px;">Please log in to the admin panel to review the submitted files.</p>`
       );
-      await sendEmail(adminEmail, `ANC Student Docs – New Submission: ${studentToken.student_name} (${studentToken.cf_number})`, adminHtml);
+      await sendEmail(
+        getNotificationRecipients(adminEmail, studentToken.university),
+        `ANC Student Docs – New Submission: ${studentToken.student_name} (${studentToken.cf_number})`,
+        adminHtml
+      );
     }
   } catch (err) {
     console.error('Admin notification email error:', err.message);

@@ -5,6 +5,7 @@ const studentTokenSchema = new mongoose.Schema({
   cf_number: { type: String, required: true },
   student_name: { type: String, required: true },
   student_email: { type: String, required: true },
+  university: { type: String, enum: ['ANC', 'UWL'], default: 'ANC' },
   counsellor_name: { type: String, required: true },
   counsellor_email: { type: String, default: '' },
   program: { type: String, required: true },
