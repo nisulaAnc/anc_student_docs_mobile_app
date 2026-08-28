@@ -5,10 +5,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import TopBar from '../components/TopBar';
 import CardHeader from '../components/CardHeader';
 import AlertBox from '../components/AlertBox';
 import Button from '../components/Button';
+import { decode as atob } from 'base-64';
 import { getCounsellors, registerStudent } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 
@@ -20,6 +22,7 @@ export default function CFRegistrationScreen({ navigation }) {
   const [cfNumber, setCfNumber] = useState('');
   const [studentName, setStudentName] = useState('');
   const [studentEmail, setStudentEmail] = useState('');
+  const [university, setUniversity] = useState('ANC');
   const [counsellorName, setCounsellorName] = useState('');
   const [counsellors, setCounsellors] = useState([]);
   const [loadingC, setLoadingC] = useState(true);
@@ -38,7 +41,17 @@ export default function CFRegistrationScreen({ navigation }) {
     }
     try {
       const res = await getCounsellors();
-      setCounsellors(res.data.data || []);
+      const uniqueCounsellors = [];
+      const seenNames = new Set();
+      for (const counsellor of res.data.data || []) {
+        const role = String(counsellor.role || '').trim().toLowerCase();
+        if (!role.includes('counsellor')) continue;
+        const nameKey = String(counsellor.name || '').trim().toLowerCase();
+        if (!nameKey || seenNames.has(nameKey)) continue;
+        seenNames.add(nameKey);
+        uniqueCounsellors.push(counsellor);
+      }
+      setCounsellors(uniqueCounsellors);
     } catch (e) {
       if (!isRefresh) {
         setAlert({ type: 'error', msg: e.message || 'Cannot load counsellors.' });
@@ -51,6 +64,36 @@ export default function CFRegistrationScreen({ navigation }) {
       }
     }
   }, []);
+
+  // Check if user is authenticated and allowed to use the CF registration screen
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const token = await AsyncStorage.getItem('counsellorSession');
+        if (!token) {
+          navigation.replace('StaffLogin', { type: 'cf' });
+          return;
+        }
+
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1]));
+          const role = String(payload.role || '').trim().toLowerCase();
+          const isCounsellor = role.includes('counsellor');
+
+          if (isCounsellor) {
+            navigation.replace('CFDashboard', {
+              counsellorName: payload.name || '',
+              counsellorEmail: payload.email || '',
+            });
+          }
+        }
+      } catch (e) {
+        navigation.replace('StaffLogin', { type: 'cf' });
+      }
+    };
+    checkAuth();
+  }, [navigation]);
 
   useEffect(() => {
     fetchCounsellors();
@@ -68,6 +111,7 @@ export default function CFRegistrationScreen({ navigation }) {
     if (!studentName.trim()) e.studentName = 'Student name is required';
     if (!studentEmail.trim()) e.studentEmail = 'Email is required';
     else if (!/\S+@\S+\.\S+/.test(studentEmail)) e.studentEmail = 'Enter a valid email';
+    if (!['ANC', 'UWL'].includes(university)) e.university = 'Please select a university';
     if (!counsellorName) e.counsellor = 'Please select a counsellor';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -81,10 +125,11 @@ export default function CFRegistrationScreen({ navigation }) {
         cf_number: cfNumber.trim(),
         student_name: studentName.trim(),
         student_email: studentEmail.trim().toLowerCase(),
+        university,
         counsellor_name: counsellorName,
       });
-      setAlert({ type: 'success', msg: `Your account verified. Registration submitted and ${counsellorName} has been notified by email.` });
-      setCfNumber(''); setStudentName(''); setStudentEmail(''); setCounsellorName('');
+      setAlert({ type: 'success', msg: `Student registration submitted successfully. ${counsellorName} has been notified by email.` });
+      setCfNumber(''); setStudentName(''); setStudentEmail(''); setUniversity('ANC'); setCounsellorName('');
     } catch (e) {
       setAlert({ type: 'error', msg: e.response?.data?.message || e.message });
     } finally { setLoading(false); }
@@ -92,7 +137,7 @@ export default function CFRegistrationScreen({ navigation }) {
 
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
-      <TopBar onBack={() => navigation.goBack()} />
+      <TopBar onBack={() => navigation.goBack()} title="Center Function Registration" showSecurityIcon={false} />
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
@@ -121,6 +166,22 @@ export default function CFRegistrationScreen({ navigation }) {
               placeholder="student@example.com" keyboardType="email-address"
               autoCapitalize="none" error={errors.studentEmail} COLORS={COLORS} />
 
+            <Text style={styles.label}>University</Text>
+            <View style={styles.universityRow}>
+              {['ANC', 'UWL'].map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.universityOption, university === option && styles.universityOptionSelected]}
+                  onPress={() => { setUniversity(option); setErrors((prev) => ({ ...prev, university: undefined })); }}
+                >
+                  <Text style={[styles.universityOptionText, university === option && styles.universityOptionTextSelected]}>
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {errors.university ? <Text style={styles.fieldErr}>{errors.university}</Text> : null}
+
             {/* Counsellor picker */}
             <Text style={styles.label}>Assign Counsellor</Text>
             <TouchableOpacity
@@ -135,7 +196,8 @@ export default function CFRegistrationScreen({ navigation }) {
             {errors.counsellor ? <Text style={styles.fieldErr}>{errors.counsellor}</Text> : null}
 
             <Button title="Submit & Notify Counsellor" onPress={handleSubmit} loading={loading} style={{ marginTop: 24 }}
-              icon={<Ionicons name="send" size={16} color="#fff" />} />
+              // icon={<Ionicons name="send" size={16} color="#fff" />} 
+            />
           </View>
         </View>
 
@@ -163,7 +225,7 @@ export default function CFRegistrationScreen({ navigation }) {
               : (
                 <FlatList
                   data={counsellors.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.email.toLowerCase().includes(searchQuery.toLowerCase()))}
-                  keyExtractor={(i) => i.email}
+                  keyExtractor={(i, index) => `${i.email}_${index}`}
                   renderItem={({ item }) => (
                     <TouchableOpacity
                       style={[styles.cItem, counsellorName === item.name && styles.cItemSel]}
@@ -221,6 +283,11 @@ const createStyles = (COLORS) => StyleSheet.create({
   pickerErr: { borderColor: COLORS.red },
   pickerVal: { fontSize: 14, color: COLORS.navy, fontWeight: '600' },
   pickerPh: { fontSize: 14, color: COLORS.muted },
+  universityRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  universityOption: { flex: 1, alignItems: 'center', paddingVertical: 12, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 12, backgroundColor: COLORS.bg },
+  universityOptionSelected: { backgroundColor: COLORS.navy, borderColor: COLORS.navy },
+  universityOptionText: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  universityOptionTextSelected: { color: COLORS.white },
   fieldErr: { fontSize: 12, color: COLORS.red, marginBottom: 8 },
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '75%' },
