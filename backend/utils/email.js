@@ -42,7 +42,9 @@ function emailHtml(title, body, btnLabel = '', btnUrl = '') {
 }
 
 function otpEmailHtml(recipientName, otp, role) {
-  const roleLabel = role === 'counsellor' ? 'Counsellor Portal' : 'Student Portal';
+  const roleLabel =
+    role === 'counsellor' ? 'Counsellor Portal' :
+    role === 'staff' ? 'Staff Portal' : 'ANC Student Docs';
   return emailHtml(
     'Your One-Time Verification Code',
     `<p style="font-size:15px;color:#334155;line-height:1.7;margin-bottom:24px;">
@@ -68,6 +70,15 @@ async function sendEmail(to, subject, htmlBody) {
   });
 }
 
+function getUniversityEmail(university) {
+  const normalizedUniversity = String(university || '').trim().toUpperCase();
+  return process.env[`${normalizedUniversity}_UNIVERSITY_EMAIL`] || process.env.UNIVERSITY_EMAIL || '';
+}
+
+function getNotificationRecipients(primaryEmail, university) {
+  return [...new Set([primaryEmail, getUniversityEmail(university)].filter(Boolean))];
+}
+
 // Generate a 6-digit OTP
 function generateOTP() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -78,4 +89,11 @@ function generateOTP4() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
-module.exports = { sendEmail, otpEmailHtml, emailHtml, generateOTP, generateOTP4 };
+module.exports = {
+  sendEmail,
+  getNotificationRecipients,
+  otpEmailHtml,
+  emailHtml,
+  generateOTP,
+  generateOTP4,
+};
