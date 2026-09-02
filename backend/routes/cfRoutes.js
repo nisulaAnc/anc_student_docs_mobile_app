@@ -4,6 +4,7 @@ const {
     registerCF,
     registerStaff,
     loginStaff,
+    sendLoginOtp,
     forgotPassword,
     resetPassword,
     getCounsellorTokenInfo,
@@ -23,6 +24,7 @@ router.get('/counsellor/token-info', getCounsellorTokenInfo);
 router.post('/verify-pin', verifyCfPin);
 router.post('/staff/register', registerStaff);
 router.post('/staff/login', loginStaff);
+router.post('/staff/send-login-otp', sendLoginOtp);
 router.post('/staff/forgot-password', forgotPassword);
 router.post('/staff/reset-password', resetPassword);
 router.post('/counsellor/register', registerCounsellorAccount);
