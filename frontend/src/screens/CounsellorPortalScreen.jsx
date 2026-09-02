@@ -94,11 +94,12 @@ export default function CounsellorPortalScreen({ navigation, route }) {
       <InfoItem label="CF Number" value={data?.cf_number} COLORS={COLORS} full />
       <InfoItem label="Student Name" value={data?.student_name} COLORS={COLORS} full />
       <InfoItem label="Student Email" value={data?.student_email} COLORS={COLORS} full />
+      <InfoItem label="University" value={data?.university || 'ANC'} COLORS={COLORS} full />
     </View>
   );
 
   return (
-    <View style={[styles.root, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.root, { paddingBottom: insets.bottom }]}> 
       <TopBar onBack={() => navigation.goBack()} />
       <ScrollView
         contentContainerStyle={styles.scroll}

@@ -1,12 +1,31 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Image, ActivityIndicator, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { decode as atob } from 'base-64';
+import { useFonts, Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 
 export default function LaunchScreen({ navigation }) {
     const insets = useSafeAreaInsets();
+    const [fontsLoaded] = useFonts({ Poppins_600SemiBold });
 
     useEffect(() => {
-        const timer = setTimeout(() => {
+        const timer = setTimeout(async () => {
+            try {
+                const token = await AsyncStorage.getItem('counsellorSession');
+                if (token) {
+                    const parts = token.split('.');
+                    const payload = parts.length === 3 ? JSON.parse(atob(parts[1])) : null;
+                    const expired = payload?.exp && payload.exp * 1000 <= Date.now();
+                    if (payload && !expired) {
+                        navigation.replace('Home');
+                        return;
+                    }
+                    await AsyncStorage.removeItem('counsellorSession');
+                }
+            } catch (e) {
+                await AsyncStorage.removeItem('counsellorSession');
+            }
             navigation.replace('Home');
         }, 2500);
 
@@ -19,12 +38,13 @@ export default function LaunchScreen({ navigation }) {
             <View style={styles.content}>
                 <View style={styles.logoContainer}>
                     <Image
-                        source={require('../../assets/logo.png')}
+                        source={require('../../assets/Docs logo.png')}
                         style={styles.logo}
                         resizeMode="contain"
                     />
                 </View>
-                <Text style={styles.brandName}>ANC Student Docs</Text>
+                {/* {fontsLoaded && <Text style={styles.title}>Student Docs</Text>} */}
+                {fontsLoaded && <Text style={styles.title}>DMS</Text>}
             </View>
             <View style={styles.footer}>
                 <ActivityIndicator size="large" color="#FFFFFF" />
@@ -47,29 +67,29 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     logoContainer: {
-        width: 120,
-        height: 120,
+        width: 140,
+        height: 140,
         backgroundColor: '#FFFFFF',
-        borderRadius: 24,
+        borderRadius: 30,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 20,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.2,
         shadowRadius: 8,
         elevation: 5,
-        overflow: 'hidden'
+        overflow: 'hidden',
     },
     logo: {
-        width: 90,
-        height: 90,
+        width: 112,
+        height: 112,
+        borderRadius: 22,
     },
-    brandName: {
+    title: {
         color: '#FFFFFF',
-        fontSize: 28,
-        fontWeight: '800',
-        letterSpacing: 0.5,
+        fontFamily: 'Poppins_600SemiBold',
+        fontSize: 26,
+        marginTop: 20,
     },
     footer: {
         alignItems: 'center',

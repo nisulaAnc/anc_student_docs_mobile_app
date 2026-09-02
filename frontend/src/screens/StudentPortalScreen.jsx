@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TopBar from '../components/TopBar';
 import CardHeader from '../components/CardHeader';
@@ -39,6 +40,8 @@ export default function StudentPortalScreen({ navigation, route }) {
   const [showPartialWarning, setShowPartialWarning] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const universityValue = String(data?.university || '').toUpperCase();
+  const university = universityValue === 'UWL' || universityValue === 'ANC' ? universityValue : null;
 
   const loadToken = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -48,6 +51,8 @@ export default function StudentPortalScreen({ navigation, route }) {
       const res = await getStudentTokenInfo(token);
       const d = res.data.data;
       setData(d);
+      const normalizedUniversity = String(d?.university || 'ANC').toUpperCase() === 'UWL' ? 'UWL' : 'ANC';
+      await AsyncStorage.setItem('studentUniversity', normalizedUniversity);
 
       const reqDocs = d?.required_documents || [];
       const uploaded = d?.already_uploaded_docs || [];
@@ -218,10 +223,16 @@ export default function StudentPortalScreen({ navigation, route }) {
 
   const isReturningStudent = alreadyUploadedCount > 0;
   const allDocsDone = missingDocs.length === 0 && alreadyHasAgreement;
+  const returnHome = () => navigation.navigate('Home', { studentUniversity: university });
 
   return (
-    <View style={[styles.root, { paddingBottom: insets.bottom }]}>
-      <TopBar onBack={() => navigation.goBack()} rightText={data?.student_email} />
+    <View style={[styles.root, { paddingBottom: insets.bottom }]}> 
+      <TopBar
+        onBack={() => navigation.goBack()}
+        title={university ? `${university} Student Portal` : 'Student Portal'}
+        rightText={data?.student_email}
+        university={university}
+      />
 
       {/* Partial Submission Warning Modal */}
       <Modal
@@ -296,7 +307,7 @@ export default function StudentPortalScreen({ navigation, route }) {
             <CardHeader eyebrow="Problem" title="Unable to load student portal" subtitle="Please check your link or try again later." />
             <View style={styles.body}>
               <Text style={styles.desc}>{alert?.msg || 'There was an issue loading your registration session.'}</Text>
-              <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 20 }} />
+              <Button title="Return Home" onPress={returnHome} style={{ marginTop: 20 }} />
             </View>
           </View>
         )}
@@ -308,7 +319,7 @@ export default function StudentPortalScreen({ navigation, route }) {
             <View style={[styles.card, { marginBottom: 12 }]}>
               <CardHeader
                 eyebrow={isReturningStudent ? 'Step 3 · Upload Missing Documents' : 'Step 3 · Document Upload'}
-                title="Student Registration"
+                title={`${university} Student Registration`}
                 subtitle={isReturningStudent
                   ? `Welcome back! Some documents are still needed.`
                   : 'Identity verified ✓ — Upload your documents below.'
@@ -346,7 +357,7 @@ export default function StudentPortalScreen({ navigation, route }) {
                   <Text style={styles.doneDesc}>
                     All your required documents have already been submitted. No further action is needed.
                   </Text>
-                  <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 20 }} />
+                  <Button title="Return Home" onPress={returnHome} style={{ marginTop: 20 }} />
                 </View>
               </View>
             )}
@@ -532,7 +543,7 @@ export default function StudentPortalScreen({ navigation, route }) {
                     <Ionicons name="document-text" size={16} color={COLORS.navy} />
                     <Text style={styles.doneBadgeTxt}>{totalUploadedCount} document{totalUploadedCount !== 1 ? 's' : ''} uploaded</Text>
                   </View>
-                  <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 24 }} />
+                  <Button title="Return Home" onPress={returnHome} style={{ marginTop: 24 }} />
                 </View>
               </>
             ) : (
@@ -558,7 +569,7 @@ export default function StudentPortalScreen({ navigation, route }) {
                       ))}
                     </View>
                   )}
-                  <Button title="Return Home" onPress={() => navigation.navigate('Home')} style={{ marginTop: 24 }} />
+                  <Button title="Return Home" onPress={returnHome} style={{ marginTop: 24 }} />
                 </View>
               </>
             )}
@@ -584,6 +595,10 @@ function StudentInfo({ data, infoStyles, COLORS }) {
       <View style={[infoStyles.item, infoStyles.full]}>
         <Text style={infoStyles.label}>Student Email</Text>
         <Text style={infoStyles.val}>{data.student_email}</Text>
+      </View>
+      <View style={[infoStyles.item, infoStyles.full]}>
+        <Text style={infoStyles.label}>University</Text>
+        <Text style={infoStyles.val}>{data.university || 'ANC'}</Text>
       </View>
       <View style={[infoStyles.item, infoStyles.full]}>
         <Text style={infoStyles.label}>Programme</Text>

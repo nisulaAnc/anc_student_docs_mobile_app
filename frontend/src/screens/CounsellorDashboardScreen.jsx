@@ -1,23 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, TextInput, Alert, RefreshControl, Image, Switch,
+  ActivityIndicator, TextInput, Alert, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TopBar from '../components/TopBar';
 import AlertBox from '../components/AlertBox';
-import { getCfDashboardStats, sendPendingReminder, setupTwoFactor, enableTwoFactor } from '../services/api';
+import { getCfDashboardStats, sendPendingReminder } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import { decode as atob } from 'base-64';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export default function CFDashboardScreen({ navigation, route }) {
+export default function CounsellorDashboardScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { colors: COLORS } = useTheme();
   const styles = createStyles(COLORS);
 
-  // Retrieve optional counsellorName and email to restrict the dashboard to that counsellor's students
+  // Restrict the dashboard to that counsellor's students
   const counsellorName = route.params?.counsellorName || null;
   const counsellorEmail = route.params?.counsellorEmail || null;
 
@@ -29,20 +29,14 @@ export default function CFDashboardScreen({ navigation, route }) {
   const [filterMode, setFilterMode] = useState('all'); // 'all', 'complete', 'pending'
   const [remindingToken, setRemindingToken] = useState(null);
   const [sortDirection, setSortDirection] = useState('asc');
-  const [staffEmail, setStaffEmail] = useState(counsellorEmail || '');
-  const [staffName, setStaffName] = useState(counsellorName || '');
-  // Resolved title: set once session is confirmed so top bar never flickers to 'CF Dashboard'
-  const [dashboardTitle, setDashboardTitle] = useState(
-    counsellorName ? 'Counsellor Dashboard' : null
-  );
 
-  // Resolve logged-in user session and enforce role access
+  // Enforce session
   useEffect(() => {
     const loadSession = async () => {
       try {
         const token = await AsyncStorage.getItem('counsellorSession');
         if (!token) {
-          navigation.replace('StaffLogin', { type: 'cf' });
+          navigation.replace('StaffLogin', { type: 'counsellor' });
           return;
         }
 
@@ -52,24 +46,15 @@ export default function CFDashboardScreen({ navigation, route }) {
           const role = String(payload.role || '').trim().toLowerCase();
           const isCounsellor = role.includes('counsellor');
 
-          const resolvedName = counsellorName || (isCounsellor ? payload.name || '' : '');
-          const resolvedEmail = counsellorEmail || (isCounsellor ? payload.email || '' : '');
-
-          if (!staffEmail && payload.email) setStaffEmail(resolvedEmail);
-          if (!staffName && payload.name) setStaffName(resolvedName);
-
-          // Set the stable title now that we know the role
-          setDashboardTitle(isCounsellor ? 'Counsellor Dashboard' : 'Center Function Dashboard');
-
-          if (counsellorName && !isCounsellor) {
+          if (!isCounsellor) {
             // CF user landed on a counsellor-scoped URL → show full dashboard
             navigation.replace('CFDashboard', {});
             return;
           }
 
-          if (!counsellorName && isCounsellor) {
-            // Counsellor landed without their params → re-navigate with params
-            navigation.replace('CFDashboard', {
+          if (!counsellorName) {
+            // Re-navigate with params if missing
+            navigation.replace('CounsellorDashboard', {
               counsellorName: payload.name || '',
               counsellorEmail: payload.email || '',
             });
@@ -79,10 +64,7 @@ export default function CFDashboardScreen({ navigation, route }) {
       } catch (_) { /* ignore decode errors */ }
     };
     loadSession();
-  // Only depend on counsellorName/Email (route params) — not on staffEmail/staffName
-  // which are set inside this effect and would cause an infinite re-run loop.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation, counsellorName, counsellorEmail]);
+  }, [navigation, counsellorName]);
 
   const fetchStats = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
@@ -90,18 +72,7 @@ export default function CFDashboardScreen({ navigation, route }) {
     setAlert(null);
     try {
       const params = {};
-      // Only scope the dashboard to a single counsellor when this screen was
-      // explicitly opened as a counsellor-specific view (i.e. counsellorName was
-      // passed via navigation). Previously the counsellor's saved login session
-      // token was ALWAYS attached, even when opening the plain "CF Portal
-      // Dashboard" (staff view). That meant once anyone had logged in as a
-      // counsellor on the device, the CF Portal Dashboard silently filtered
-      // down to just that counsellor's students instead of showing the total
-      // across all students. Restricting the token lookup to the counsellor
-      // flow fixes both dashboards:
-      //  - CF Portal Dashboard (no counsellorName) -> always shows ALL students
-      //  - Counsellor Dashboard (counsellorName set) -> shows only that
-      //    counsellor's own ("regarding") students
+      
       if (counsellorName) {
         params.counsellor_name = counsellorName;
         if (counsellorEmail) {
@@ -111,7 +82,13 @@ export default function CFDashboardScreen({ navigation, route }) {
         if (token) {
           params.counsellor_token = token;
         }
+      } else {
+        // Stop fetching if counsellor params aren't set yet
+        setLoading(false);
+        setRefreshing(false);
+        return;
       }
+      
       const res = await getCfDashboardStats(params);
       if (res.data?.success) {
         setStats(res.data.data);
@@ -139,7 +116,7 @@ export default function CFDashboardScreen({ navigation, route }) {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchStats(true);
-  }, []);
+  }, [fetchStats]);
 
   const handleSendReminder = async (student) => {
     setRemindingToken(student.token);
@@ -199,7 +176,7 @@ export default function CFDashboardScreen({ navigation, route }) {
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <TopBar
         onBack={() => navigation.goBack()}
-        title={dashboardTitle || (counsellorName ? 'Counsellor Dashboard' : 'Center Function Dashboard')}
+        title="Counsellor Dashboard"
         showSecurityIcon={false}
       />
 
@@ -210,7 +187,7 @@ export default function CFDashboardScreen({ navigation, route }) {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => fetchStats(true)}
+            onRefresh={onRefresh}
             tintColor={COLORS.navy}
             colors={[COLORS.navy]}
           />
@@ -279,7 +256,7 @@ export default function CFDashboardScreen({ navigation, route }) {
             <Ionicons name="search" size={18} color={COLORS.muted} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search CF Number, Student Email, Counsellor..."
+              placeholder="Search CF Number, Student Email..."
               placeholderTextColor={COLORS.muted}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -354,7 +331,6 @@ export default function CFDashboardScreen({ navigation, route }) {
                   <View style={{ flex: 1, marginRight: 8 }}>
                     <Text style={styles.studentName} numberOfLines={1}>Student Name: {student.student_name}</Text>
                     <Text style={styles.studentMeta}>CF Number: {student.cf_number}</Text>
-                    <Text style={styles.studentMeta}>Counsellor Name: {student.counsellor_name}</Text>
                     <Text style={styles.studentMeta}>Student Email:
                       <Text style={styles.studentEmail} numberOfLines={1}> {student.student_email}</Text>
                     </Text>
@@ -516,14 +492,6 @@ const createStyles = (COLORS) => StyleSheet.create({
   overallProgressBar: { height: 8, backgroundColor: COLORS.bg, borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
   overallProgressFill: { height: '100%', borderRadius: 4 },
   overallProgressSub: { fontSize: 11, color: COLORS.muted },
-
-  // 2FA card
-  twoFactorCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.border, marginBottom: 14 },
-  twoFactorHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  twoFactorSwitchRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  twoFactorTitle: { fontSize: 14, fontWeight: '800', color: COLORS.navy },
-  twoFactorSubName: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
-  twoFactorText: { fontSize: 12, color: COLORS.muted, lineHeight: 17, marginBottom: 12 },
 
   // Filter
   filterSection: { backgroundColor: COLORS.white, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: COLORS.border, marginBottom: 12 },

@@ -2,75 +2,102 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar,
   Modal, TextInput, ActivityIndicator, Image, FlatList, RefreshControl,
-  Animated, Dimensions, Switch,
+  Animated, Dimensions, Switch, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
-import { verifyCfPin, getCounsellors, registerCounsellorAccount, resetCounsellorPin, setupTwoFactor, enableTwoFactor } from '../services/api';
+import {
+  getCounsellors, setupTwoFactor, enableTwoFactor, sendTwoFactorEmailCode,
+} from '../services/api';
+import { decode as atob } from 'base-64';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
+import { useFonts, Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 
-export default function HomeScreen({ navigation }) {
+const normalizeRole = (role) => String(role || '').trim().toLowerCase();
+const isCfRole = (role) => {
+  const value = normalizeRole(role);
+  return value.includes('center function') || value.includes('center-function') || value === 'cf';
+};
+const isCounsellorRole = (role) => normalizeRole(role).includes('counsellor');
+
+export default function HomeScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { colors: COLORS } = useTheme();
   const styles = createStyles(COLORS);
+  const [fontsLoaded] = useFonts({ Poppins_600SemiBold });
+  const requestedUniversity = String(route.params?.studentUniversity || '').toUpperCase();
+  const [homeUniversity, setHomeUniversity] = useState(
+    requestedUniversity === 'ANC' || requestedUniversity === 'UWL' ? requestedUniversity : null
+  );
+  useEffect(() => {
+    if (homeUniversity || requestedUniversity) return;
+    AsyncStorage.getItem('studentUniversity').then((storedUniversity) => {
+      const normalizedUniversity = String(storedUniversity || '').toUpperCase();
+      if (normalizedUniversity === 'ANC' || normalizedUniversity === 'UWL') {
+        setHomeUniversity(normalizedUniversity);
+      }
+    });
+  }, [homeUniversity, requestedUniversity]);
+  const homeLogo = homeUniversity === 'UWL'
+    ? require('../../assets/UWL-Logo.png')
+    : homeUniversity === 'ANC'
+      ? require('../../assets/logo.png')
+      : require('../../assets/Docs logo.png');
 
-  const [destScreen, setDestScreen] = useState('CFRegistration');
-  const [pinModalVisible, setPinModalVisible] = useState(false);
-  const [pin, setPin] = useState('');
-  const [pinError, setPinError] = useState('');
-  const [pinLoading, setPinLoading] = useState(false);
-  const pinInputRef = useRef(null);
-
-  // Counsellor login states
-  const [isCounsellorFlow, setIsCounsellorFlow] = useState(false);
-  const [counsellors, setCounsellors] = useState([]);
-  const [selectedCounsellor, setSelectedCounsellor] = useState(null);
-  const [showCounsellorPicker, setShowCounsellorPicker] = useState(false);
-  const [counsellorSearch, setCounsellorSearch] = useState('');
-  const [showCreateCounsellorModal, setShowCreateCounsellorModal] = useState(false);
-  const [showCounsellorDropdown, setShowCounsellorDropdown] = useState(false);
-  const [showCounsellorNameDropdown, setShowCounsellorNameDropdown] = useState(false);
-  const [createMode, setCreateMode] = useState('create');
-  const [counsellorForm, setCounsellorForm] = useState({ name: '', email: '', pin: '', oldPin: '', newPin: '' });
-  const [counsellorFormError, setCounsellorFormError] = useState('');
-  const [counsellorFormLoading, setCounsellorFormLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [twoFactorState, setTwoFactorState] = useState({ enabled: false, secret: '', qrCodeUri: '', qrCodeImageUrl: '', manualCode: '', otp: '', loading: false, setupVisible: false });
-  const [staffEmail, setStaffEmail] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [profileVisible, setProfileVisible] = useState(false);
   const [menuAnimation] = useState(new Animated.Value(Dimensions.get('window').width));
-  const displayedCounsellorName = counsellorForm.name || selectedCounsellor?.name || '';
-
-  const loadCounsellorList = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    }
-    try {
-      const res = await getCounsellors();
-      if (res.data?.success) {
-        setCounsellors(res.data.data || []);
-      }
-    } catch (_) {
-      // ignore failures while refreshing
-    } finally {
-      if (isRefresh) setRefreshing(false);
-    }
-  }, []);
+  const [sessionUser, setSessionUser] = useState(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [settingsState, setSettingsState] = useState({
+    enabled: false,
+    loading: false,
+    setupVisible: false, // New: to show QR code setup
+    secret: '',          // New: TOTP secret
+    qrCodeUri: '',       // New: QR code URI
+    manualCode: '',      // New: Manual setup code
+    otp: '',             // 6-digit code from authenticator
+  });
 
   useEffect(() => {
-    // Prefetch counsellors list and keep it refreshed while the screen is active.
-    loadCounsellorList();
-    const interval = setInterval(() => loadCounsellorList(true), 60000);
-    const unsubscribe = navigation.addListener('focus', () => loadCounsellorList(true));
-    return () => {
-      clearInterval(interval);
-      unsubscribe();
-    };
-  }, [loadCounsellorList, navigation]);
+    const unsubscribe = navigation.addListener('focus', async () => {
+      try {
+        const token = await AsyncStorage.getItem('counsellorSession');
+        if (token) {
+          const parts = token.split('.');
+          if (parts.length === 3) {
+            const payload = JSON.parse(atob(parts[1]));
+            const normalizedUser = {
+              id: payload.id || payload.email || payload.name || 'counsellor',
+              name: payload.name || '',
+              email: payload.email || '',
+              role: payload.role || '',
+              lastLogin: payload.lastLogin || payload.last_login || null,
+              twoFactorEnabled: !!(payload.twoFactorEnabled || payload.two_fa_enabled),
+            };
+            setSessionUser(normalizedUser);
+            setSettingsState(prev => ({ ...prev, enabled: normalizedUser.twoFactorEnabled }));
+          } else {
+            setSessionUser(null);
+          }
+        } else {
+          setSessionUser(null);
+        }
+      } catch (e) {
+        setSessionUser(null);
+          setSettingsState(prev => ({ ...prev, enabled: false }));
+      } finally {
+        setSessionLoading(false);
+      }
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+
 
   const ROLES = [
     {
@@ -78,13 +105,13 @@ export default function HomeScreen({ navigation }) {
       params: {},
       icon: 'grid',
       color: '#8B5CF6',
-      label: 'CF Dashboard',
+      label: 'Center Function Dashboard',
       desc: 'View statistics, check document status & send reminders',
       protected: true,
       type: 'cf',
     },
     {
-      screen: 'CFDashboard', 
+      screen: 'CFDashboard',
       params: {},
       icon: 'documents',
       color: '#ecaa48',
@@ -98,7 +125,7 @@ export default function HomeScreen({ navigation }) {
       params: {},
       icon: 'person-add',
       color: COLORS.navy,
-      label: 'CF Registration',
+      label: 'Center Function Registration',
       desc: 'Register a new student and notify their counsellor',
       protected: true,
       type: 'cf',
@@ -110,7 +137,8 @@ export default function HomeScreen({ navigation }) {
       color: COLORS.blue,
       label: 'Counsellor Portal',
       desc: 'Select the student programme and notify the student',
-      protected: false,
+      protected: true,
+      type: 'counsellor',
     },
     {
       screen: 'QRScan',
@@ -123,115 +151,61 @@ export default function HomeScreen({ navigation }) {
     },
   ];
 
-  const handleRolePress = (role) => {
+  const handleRolePress = async (role) => {
     if (role.protected) {
-      setPin('');
-      setPinError('');
-      setStaffEmail('');
-      setTwoFactorState({ enabled: false, secret: '', qrCodeUri: '', manualCode: '', otp: '', loading: false, setupVisible: false });
-      setDestScreen(role.screen);
-      if (role.type === 'counsellor') {
-        setIsCounsellorFlow(true);
-        setSelectedCounsellor(null);
-        setShowCounsellorDropdown(false);
-        setShowCounsellorPicker(false);
-        setCreateMode('create');
-        setCounsellorForm({ name: '', email: '', pin: '', oldPin: '', newPin: '' });
-        setCounsellorFormError('');
-        setShowCreateCounsellorModal(true);
-      } else {
-        setIsCounsellorFlow(false);
-        setPinModalVisible(true);
-        setTimeout(() => pinInputRef.current?.focus(), 300);
-      }
-    } else {
-      navigation.navigate(role.screen, role.params);
-    }
-  };
+      try {
+        const token = await AsyncStorage.getItem('counsellorSession');
+        if (token) {
+          const parts = token.split('.');
+          const payload = parts.length === 3 ? JSON.parse(atob(parts[1])) : {};
+          const activeRole = payload.role || sessionUser?.role || '';
 
-  const handleCounsellorFormSubmit = async () => {
-    if (createMode === 'create') {
-      if (!counsellorForm.name.trim() || !counsellorForm.email.trim() || !counsellorForm.pin.trim()) {
-        setCounsellorFormError('Please fill in name, email and PIN.');
-        return;
-      }
+          // A Counsellor trying to access a CF-only tile → redirect to their scoped dashboard
+          if (role.type === 'cf' && isCounsellorRole(activeRole)) {
+            navigation.navigate('CFDashboard', {
+              counsellorName: payload.name || sessionUser?.name,
+              counsellorEmail: payload.email || sessionUser?.email,
+            });
+            return;
+          }
 
-      if (counsellorForm.pin.length !== 6) {
-        setCounsellorFormError('PIN must be exactly 6 digits.');
-        return;
-      }
-    } else {
-      if (!counsellorForm.email.trim() || !counsellorForm.oldPin.trim() || !counsellorForm.newPin.trim()) {
-        setCounsellorFormError('Please fill in email, old PIN and new PIN.');
-        return;
-      }
+          // A CF user trying to access the Counsellor tile → redirect to their full dashboard
+          if (role.type === 'counsellor' && isCfRole(activeRole)) {
+            navigation.navigate('CFDashboard', {});
+            return;
+          }
 
-      if (counsellorForm.oldPin.length !== 6 || counsellorForm.newPin.length !== 6) {
-        setCounsellorFormError('PINs must be exactly 6 digits.');
-        return;
-      }
-    }
+          if (role.type === 'counsellor') {
+            navigation.navigate(role.screen, {
+              counsellorName: payload.name || sessionUser?.name,
+              counsellorEmail: payload.email || sessionUser?.email,
+            });
+            return;
+          }
 
-    setCounsellorFormLoading(true);
-    setCounsellorFormError('');
-    try {
-      const res = createMode === 'create'
-        ? await registerCounsellorAccount(counsellorForm)
-        : await resetCounsellorPin({ email: counsellorForm.email, oldPin: counsellorForm.oldPin, newPin: counsellorForm.newPin });
-
-      if (res.data?.success) {
-        setShowCreateCounsellorModal(false);
-        setCounsellorForm({ name: '', email: '', pin: '', oldPin: '', newPin: '' });
-        await loadCounsellorList();
-        setCounsellorFormError('');
-      } else {
-        setCounsellorFormError(res.data?.message || 'Unable to save counsellor account.');
-      }
-    } catch (e) {
-      setCounsellorFormError(e.response?.data?.message || 'Unable to save counsellor account.');
-    } finally {
-      setCounsellorFormLoading(false);
-    }
-  };
-
-  const handlePinSubmit = async () => {
-    if (pin.length !== 6) {
-      setPinError('Please enter the full 6-digit PIN.');
-      return;
-    }
-    setPinLoading(true);
-    setPinError('');
-    try {
-      if (isCounsellorFlow) {
-        if (!selectedCounsellor) {
-          setPinError('Please select a counsellor.');
-          setPinLoading(false);
+          navigation.navigate(role.screen, role.params);
           return;
         }
-        const staffEmailValue = (selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
-        const res = await verifyCfPin(pin, 'counsellor', selectedCounsellor, twoFactorState.otp || '', staffEmailValue);
-        if (res.data?.token) {
-          await AsyncStorage.setItem('counsellorSession', res.data.token);
-        }
-        setPinModalVisible(false);
-        setPin('');
-        navigation.navigate('CFDashboard', { counsellorName: selectedCounsellor.name, counsellorEmail: selectedCounsellor.email });
-      } else {
-        const staffEmailValue = (selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
-        await verifyCfPin(pin, 'cf', null, twoFactorState.otp || '', staffEmailValue);
-        setPinModalVisible(false);
-        setPin('');
-        setTwoFactorState((prev) => ({ ...prev, otp: '' }));
-        navigation.navigate(destScreen, {});
+
+        navigation.navigate('StaffLogin', {
+          type: role.type,
+          redirectTo: role.screen,
+          redirectParams: role.params,
+        });
+      } catch (e) {
+        navigation.navigate('StaffLogin', {
+          type: role.type,
+          redirectTo: role.screen,
+          redirectParams: role.params,
+        });
       }
-    } catch (e) {
-      setPinError(e.response?.data?.message || 'Incorrect PIN. Access denied.');
-      setPin('');
-      pinInputRef.current?.focus();
-    } finally {
-      setPinLoading(false);
+      return;
     }
+
+    navigation.navigate(role.screen, role.params);
   };
+
+
 
   const openMenu = () => {
     setMenuVisible(true);
@@ -250,103 +224,181 @@ export default function HomeScreen({ navigation }) {
     }).start(() => setMenuVisible(false));
   };
 
-  const buildQrCodeUrl = (uri) => (uri ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(uri)}` : '');
-
-  const handleSettingsTwoFactorToggle = async (value) => {
-    if (value) {
-      const email = (selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
-      if (!email) {
-        setCounsellorFormError('Enter the staff email before enabling 2FA.');
-        return;
+  const handleLogout = async (clearCache = false) => {
+    try {
+      if (clearCache) {
+        await AsyncStorage.clear();
+      } else {
+        await AsyncStorage.removeItem('counsellorSession');
       }
-      await handleSetupTwoFactor(email);
-      return;
+      setSessionUser(null);
+    } catch (e) {
+      console.warn('Unable to clear counsellor session:', e);
+    } finally {
+      closeMenu();
     }
-
-    await handleToggleTwoFactor(false);
   };
 
-  const handleSetupTwoFactor = async (emailOverride = '') => {
-    const email = (emailOverride || selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
-    if (!email) {
-      setCounsellorFormError('Enter the staff email before enabling 2FA.');
-      return;
-    }
+  const handleClearCache = async () => {
+    Alert.alert(
+      'Clear Cache & Logout',
+      'This will log you out and clear all local app data. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', style: 'destructive', onPress: async () => {
+        await handleLogout(true);
+        }},
+      ]
+    );
+  };
 
-    setTwoFactorState((prev) => ({ ...prev, loading: true }));
+  useEffect(() => {
+    setSettingsState((prev) => ({ ...prev, enabled: !!sessionUser?.twoFactorEnabled, codeSent: false, otp: '' }));
+  }, [sessionUser]);
+
+  const handleSettingsTwoFactorToggle = async (nextEnabled) => {
+  const email = sessionUser?.email;
+  if (!email) {
+    Alert.alert('Error', 'No email found for your account.');
+    return;
+  }
+
+  // If enabling 2FA, first set up the TOTP secret and QR code
+  if (nextEnabled) {
+    setSettingsState((prev) => ({ ...prev, loading: true, codeSent: false, otp: '' }));
     try {
-      const res = await setupTwoFactor({ email, name: selectedCounsellor?.name || counsellorForm.name || '' });
-      if (res.data?.success) {
-        setTwoFactorState((prev) => ({
+      const res = await setupTwoFactor({ email, name: sessionUser?.name || 'Staff' });
+      if (res.data?.success && res.data?.data) {
+        setSettingsState((prev) => ({
           ...prev,
           loading: false,
           setupVisible: true,
-          secret: res.data.data?.secret || '',
-          qrCodeUri: res.data.data?.qr_code_uri || '',
-          qrCodeImageUrl: buildQrCodeUrl(res.data.data?.qr_code_uri || ''),
-          manualCode: res.data.data?.manual_code || '',
-          enabled: false,
+          secret: res.data.data.secret,
+          qrCodeUri: res.data.data.qr_code_uri,
+          manualCode: res.data.data.manual_code,
+          otp: '',
         }));
+        return;
+      } else {
+        Alert.alert('Error', res.data?.message || 'Failed to initialize 2FA setup.');
       }
     } catch (e) {
-      setCounsellorFormError(e.response?.data?.message || 'Unable to set up authenticator.');
-      setTwoFactorState((prev) => ({ ...prev, loading: false }));
+      console.error('Error setting up 2FA:', e);
+      Alert.alert('Error', e.response?.data?.message || 'Unable to initialize 2FA setup. Please try again.');
+    } finally {
+      setSettingsState((prev) => ({ ...prev, loading: false }));
     }
-  };
+    return;
+  }
 
-  const handleToggleTwoFactor = async (enabled) => {
-    const email = (selectedCounsellor?.email || counsellorForm.email || staffEmail || '').trim();
-    const secret = twoFactorState.secret;
-    const otp = twoFactorState.otp;
-
-    if (!email || !secret || !otp) {
-      setCounsellorFormError('Complete the authenticator setup first.');
-      return;
-    }
-
-    setTwoFactorState((prev) => ({ ...prev, loading: true }));
-    try {
-      const res = await enableTwoFactor({ email, secret, otp, enabled });
-      if (res.data?.success) {
-        setTwoFactorState((prev) => ({ ...prev, loading: false, enabled, setupVisible: false, otp: '' }));
-        setCounsellorFormError('');
+  // Disabling 2FA
+  setSettingsState((prev) => ({ ...prev, loading: true }));
+  try {
+    const res = await enableTwoFactor({ email, enabled: false, method: 'totp' });
+    if (res.data?.success) {
+      if (res.data.token) {
+        await AsyncStorage.setItem('counsellorSession', res.data.token);
       }
-    } catch (e) {
-      setCounsellorFormError(e.response?.data?.message || 'Unable to update 2FA.');
-      setTwoFactorState((prev) => ({ ...prev, loading: false }));
+      setSessionUser((prev) => (prev ? { ...prev, twoFactorEnabled: false } : prev));
+      setSettingsState((prev) => ({ ...prev, enabled: false }));
+      Alert.alert('Success', 'Two-Factor Authentication has been disabled.');
+    } else {
+      Alert.alert('Error', res.data?.message || 'Failed to disable 2FA.');
     }
-  };
+  } catch (e) {
+    console.error('Error disabling 2FA:', e);
+    Alert.alert('Error', e.response?.data?.message || 'Unable to disable 2FA.');
+  } finally {
+    setSettingsState((prev) => ({ ...prev, loading: false, codeSent: false, otp: '' }));
+  }
+};
+
+const handleConfirmSettingsCode = async () => {
+  const email = sessionUser?.email;
+  if (!email) {
+    Alert.alert('Error', 'No email found for your account.');
+    return;
+  }
+  
+  if (settingsState.otp.trim().length !== 6) {
+    Alert.alert('Error', 'Please enter a valid 6-digit verification code.');
+    return;
+  }
+
+  setSettingsState((prev) => ({ ...prev, loading: true }));
+  try {
+      const res = await enableTwoFactor({
+      email,
+      otp: settingsState.otp.trim(),
+      secret: settingsState.secret,
+      enabled: true,
+      method: 'totp'
+    });
+    if (res.data?.success) {
+      if (res.data.token) {
+        await AsyncStorage.setItem('counsellorSession', res.data.token);
+      }
+      setSessionUser((prev) => (prev ? { ...prev, twoFactorEnabled: true } : prev));
+      setSettingsState((prev) => ({ ...prev, enabled: true, codeSent: false, otp: '' }));
+      Alert.alert('Success', 'Two-Factor Authentication has been enabled.');
+      setSettingsState((prev) => ({ ...prev, codeSent: false, otp: '', setupVisible: false }));
+      setSettingsVisible(false);
+    } else {
+      Alert.alert('Error', res.data?.message || 'Failed to enable 2FA. Please check your code and try again.');
+    }
+  } catch (e) {
+    console.error('Error enabling 2FA:', e);
+    Alert.alert('Error', e.response?.data?.message || 'Invalid verification code. Please try again.');
+  } finally {
+    setSettingsState((prev) => ({ ...prev, loading: false }));
+  }
+};
+
+  const profileType = isCounsellorRole(sessionUser?.role) ? 'counsellor' : 'cf';
+  const visibleRoles = ROLES.filter((role) => role.label === 'Student Portal');
+  const menuRoles = ROLES.filter((role) => {
+    if (role.label === 'Student Portal') return false;
+    if (!sessionUser) return true;
+    return isCounsellorRole(sessionUser.role)
+      ? role.type === 'counsellor'
+      : role.type === 'cf';
+  });
+  const twoFactorEnabled = !!sessionUser?.twoFactorEnabled;
+  const profileLastLogin = sessionUser?.lastLogin
+    ? new Date(sessionUser.lastLogin).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
+    : 'N/A';
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.navy} />
       <LinearGradient colors={[COLORS.navy, COLORS.blue]} style={[styles.hero, { paddingTop: insets.top + 24 }]}>
-        <TouchableOpacity style={{ position: 'absolute', top: insets.top + 16, left: 20 }} onPress={openMenu}>
+        <TouchableOpacity style={{ position: 'absolute', top: insets.top + 16, left: 20, zIndex: 10 }} onPress={openMenu}>
           <Ionicons name="menu" size={26} color={COLORS.white} />
         </TouchableOpacity>
-        <View style={styles.logoMark}>
-          <Image source={require('../../assets/logo.png')} style={{ width: 44, height: 44 }} resizeMode="contain" />
+
+        <View style={{ alignItems: 'center', marginTop: 10, marginBottom: 10 }}>
+          <View style={styles.logoMark}>
+            <Image source={homeLogo} style={{ width:52, height: 52, borderRadius: 8 }} resizeMode="contain" />
+          </View>
+          {/* <Text style={[styles.brand, fontsLoaded && styles.poppinsSemiBold]}>Student Docs</Text> */}
+          <Text style={[styles.brand, fontsLoaded && styles.poppinsSemiBold, { textAlign: 'center' }]}>Document Management {'\n'} System</Text>
+          {/* <Text style={styles.tag}>Document Portal</Text> */}
         </View>
-        <Text style={styles.brand}>ANC Student Docs</Text>
-        <Text style={styles.tag}>Document Portal</Text>
+
+        <View style={styles.heroActions} />
       </LinearGradient>
 
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => loadCounsellorList(true)}
-            tintColor={COLORS.navy}
-            colors={[COLORS.navy]}
-          />
-        }
       >
         <Text style={styles.heading}>Welcome</Text>
         <Text style={styles.sub}>Select your role to continue.</Text>
 
-        {ROLES.map((r) => (
+        {sessionLoading ? null : visibleRoles.map((r) => (
           <TouchableOpacity
             key={r.label}
             style={styles.card}
@@ -362,7 +414,7 @@ export default function HomeScreen({ navigation }) {
                 {r.protected && (
                   <View style={styles.lockBadge}>
                     <Ionicons name="lock-closed" size={10} color={COLORS.navy} />
-                    <Text style={styles.lockBadgeTxt}>PIN Protected</Text>
+                    {/* <Text style={styles.lockBadgeTxt}>PIN Protected</Text> */}
                   </View>
                 )}
               </View>
@@ -372,20 +424,22 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         ))}
 
-        <Text style={styles.footer}>© {new Date().getFullYear()} ANC Education · Secure Document Portal</Text>
+        <Text style={styles.footer}>© {new Date().getFullYear()} UWL Branch Campus Operated By ANC Education, {'\n'}Sri Lanka</Text>
       </ScrollView>
 
       <Modal visible={menuVisible} transparent animationType="none">
         <View style={styles.drawerOverlay}>
           <TouchableOpacity style={styles.drawerBackdrop} onPress={closeMenu} />
-          <Animated.View style={[styles.drawerPanel, { transform: [{ translateX: menuAnimation }] }]}> 
+          <Animated.View style={[styles.drawerPanel, { transform: [{ translateX: menuAnimation }] }]}>
             <View style={styles.drawerHeader}>
               <View style={styles.drawerAvatar}>
-                <Ionicons name="person" size={24} color={COLORS.white} />
+                {/* <Ionicons name="person" size={24} color={COLORS.white} /> */}
+                <Image source={homeLogo} style={{ width: 24, height: 24, borderRadius: 6 }} resizeMode="contain" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.drawerTitle}>ANC Student Docs</Text>
-                <Text style={styles.drawerSubtitle}>Secure staff portal</Text>
+                {/* <Text style={[styles.drawerTitle, fontsLoaded && styles.poppinsSemiBold]}>Student Docs</Text> */}
+                <Text style={[styles.drawerTitle, fontsLoaded && styles.poppinsSemiBold]}>DMS</Text>
+                {/* <Text style={styles.drawerSubtitle}>Secure staff portal</Text> */}
               </View>
               <TouchableOpacity onPress={closeMenu}>
                 <Ionicons name="close" size={22} color={COLORS.muted} />
@@ -395,577 +449,265 @@ export default function HomeScreen({ navigation }) {
               <Ionicons name="home-outline" size={18} color={COLORS.navy} />
               <Text style={styles.drawerItemText}>Home</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.drawerItem} onPress={() => { closeMenu(); setProfileVisible(true); }}>
-              <Ionicons name="person-circle-outline" size={18} color={COLORS.navy} />
-              <Text style={styles.drawerItemText}>My Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.drawerItem} onPress={() => { closeMenu(); setSettingsVisible(true); }}>
-              <Ionicons name="settings-outline" size={18} color={COLORS.navy} />
-              <Text style={styles.drawerItemText}>Settings</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.drawerItem} onPress={() => { closeMenu(); navigation.navigate('Home'); }}>
-              <Ionicons name="log-out-outline" size={18} color={COLORS.navy} />
-              <Text style={styles.drawerItemText}>Logout</Text>
-            </TouchableOpacity>
+            {menuRoles.map((role) => (
+              <TouchableOpacity
+                key={role.label}
+                style={styles.drawerItem}
+                onPress={() => { closeMenu(); handleRolePress(role); }}
+              >
+                <Ionicons name={role.icon} size={18} color={role.color} />
+                <Text style={styles.drawerItemText}>{role.label}</Text>
+              </TouchableOpacity>
+            ))}
+            {sessionUser ? (
+              <>
+                <TouchableOpacity style={styles.drawerItem} onPress={() => { closeMenu(); setProfileVisible(true); }}>
+                  <Ionicons name="person-circle-outline" size={18} color={COLORS.navy} />
+                  <Text style={styles.drawerItemText}>My Profile</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.drawerItem} onPress={() => { closeMenu(); setSettingsVisible(true); }}>
+                  <Ionicons name="settings-outline" size={18} color={COLORS.navy} />
+                  <Text style={styles.drawerItemText}>Settings</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.drawerItem} onPress={handleLogout}>
+                  <Ionicons name="log-out-outline" size={18} color={COLORS.navy} />
+                  <Text style={styles.drawerItemText}>Logout</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.drawerItem} onPress={handleClearCache}>
+                  <Ionicons name="trash-outline" size={18} color={COLORS.red} />
+                  <Text style={[styles.drawerItemText, { color: COLORS.red }]}>Clear Cache</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
           </Animated.View>
         </View>
       </Modal>
 
-      <Modal visible={settingsVisible} transparent animationType="fade">
-        <View style={styles.modalBg}>
-          <View style={styles.settingsCard}>
-            <View style={styles.settingsHeader}>
-              <Text style={styles.settingsTitle}>Account Settings</Text>
-              <TouchableOpacity onPress={() => setSettingsVisible(false)}>
-                <Ionicons name="close" size={20} color={COLORS.muted} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.settingsText}>Enable authenticator app verification for staff access.</Text>
-            <View style={styles.settingsSwitchRow}>
-              <Text style={styles.settingsLabel}>Authenticator App (2FA)</Text>
-              <Switch
-                value={twoFactorState.enabled}
-                onValueChange={handleSettingsTwoFactorToggle}
-                thumbColor={twoFactorState.enabled ? COLORS.white : COLORS.white}
-                trackColor={{ false: COLORS.border, true: COLORS.blue }}
-              />
-            </View>
-            <TextInput
-              style={styles.staffEmailInput}
-              value={staffEmail}
-              onChangeText={setStaffEmail}
-              placeholder="Staff email"
-              placeholderTextColor={COLORS.muted}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            {twoFactorState.setupVisible ? (
-              <View style={styles.settingsBox}>
-                <Text style={styles.settingsBoxText}>Enter the code from your authenticator app.</Text>
-                <TextInput
-                  style={styles.twoFactorInput}
-                  value={twoFactorState.otp}
-                  onChangeText={(t) => setTwoFactorState((prev) => ({ ...prev, otp: t.replace(/\D/g, '').slice(0, 6) }))}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  placeholder="6-digit code"
-                  placeholderTextColor={COLORS.muted}
-                />
-                {twoFactorState.qrCodeImageUrl ? (
-                  <View style={styles.qrCard}>
-                    <Text style={styles.qrTitle}>Scan QR code</Text>
-                    <Image source={{ uri: twoFactorState.qrCodeImageUrl }} style={styles.qrImage} />
-                    <Text style={styles.qrText}>Manual code: {twoFactorState.manualCode || twoFactorState.secret}</Text>
-                  </View>
-                ) : null}
-                <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleToggleTwoFactor(true)} disabled={twoFactorState.loading || !twoFactorState.otp}>
-                  <Text style={styles.secondaryBtnText}>Enable</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      </Modal>
+
 
       <Modal visible={profileVisible} transparent animationType="fade">
         <View style={styles.modalBg}>
-          <View style={styles.settingsCard}>
-            <View style={styles.settingsHeader}>
-              <Text style={styles.settingsTitle}>My Profile</Text>
-              <TouchableOpacity onPress={() => setProfileVisible(false)}>
-                <Ionicons name="close" size={20} color={COLORS.muted} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.profileRow}>
-              <Ionicons name="person-circle-outline" size={28} color={COLORS.navy} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.profileName}>Staff Account</Text>
-                <Text style={styles.profileMeta}>{staffEmail || 'Add your staff email in Settings'}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Counsellor Picker Modal ── */}
-      <Modal visible={showCounsellorPicker} animationType="slide" transparent>
-        <View style={styles.modalBg}>
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-            <View style={styles.sheetHead}>
-              <Text style={styles.sheetTitle}>Select Your Name</Text>
-              <TouchableOpacity onPress={() => setShowCounsellorPicker(false)}>
-                <Ionicons name="close" size={22} color={COLORS.text} />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search your name..."
-              placeholderTextColor={COLORS.muted}
-              value={counsellorSearch}
-              onChangeText={setCounsellorSearch}
-            />
-            <FlatList
-              data={counsellors.filter(c => (c.name || '').toLowerCase().includes((counsellorSearch || '').toLowerCase()))}
-              keyExtractor={(i) => i.email}
-              style={{ maxHeight: 300 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.pItem, selectedCounsellor?.email === item.email && styles.pItemSel]}
-                  onPress={() => {
-                    setSelectedCounsellor(item);
-                    setCounsellorForm((prev) => ({ ...prev, email: item.email, name: item.name }));
-                    setShowCounsellorPicker(false);
-                    setPinModalVisible(true);
-                    setTimeout(() => pinInputRef.current?.focus(), 300);
-                  }}
-                >
-                  <Ionicons name="person-outline" size={16} color={COLORS.navy} />
-                  <Text style={styles.pLabel}>{item.name}</Text>
-                  {selectedCounsellor?.email === item.email && <Ionicons name="checkmark-circle" size={18} color={COLORS.navy} />}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Create / Reset Counsellor Login Modal — beautiful centered popup ── */}
-      <Modal
-        visible={showCreateCounsellorModal}
-        animationType="fade"
-        transparent
-        onRequestClose={() => { if (!counsellorFormLoading) { setShowCreateCounsellorModal(false); setCounsellorFormError(''); } }}
-      >
-        <View style={styles.ccOverlay}>
-          <View style={styles.ccCard}>
-            <TouchableOpacity
-              style={styles.ccCloseBtn}
-              onPress={() => { setShowCreateCounsellorModal(false); setCounsellorFormError(''); }}
-              disabled={counsellorFormLoading}
-            >
-              <Ionicons name="close" size={20} color={COLORS.muted} />
-            </TouchableOpacity>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 2 }}
-            >
-              {/* Header */}
-              <View style={styles.ccHeader}>
-                <LinearGradient colors={[COLORS.navy, COLORS.blue]} style={styles.ccIconWrap}>
-                  <Ionicons name={createMode === 'create' ? 'person-add' : 'key'} size={26} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.ccTitle}>{createMode === 'create' ? 'Create Counsellor Login' : 'Reset Your PIN'}</Text>
-                <Text style={styles.ccSubtitle}>
-                  {createMode === 'create'
-                    ? 'Set up your secure 6-digit PIN to access the Counsellor Dashboard.'
-                    : 'Verify your old PIN, then choose a new one.'}
-                </Text>
-              </View>
-
-              {/* Segmented toggle */}
-              <View style={styles.ccToggleRow}>
-                <TouchableOpacity
-                  style={[styles.ccToggleBtn, createMode === 'create' && styles.ccToggleBtnActive]}
-                  onPress={() => {
-                    setCreateMode('create');
-                    setCounsellorForm({ name: '', email: '', pin: '', oldPin: '', newPin: '' });
-                    setCounsellorFormError('');
-                  }}
-                >
-                  <Ionicons name="person-add-outline" size={14} color={createMode === 'create' ? '#fff' : COLORS.muted} />
-                  <Text style={[styles.ccToggleTxt, createMode === 'create' && styles.ccToggleTxtActive]}>Create New</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.ccToggleBtn, createMode === 'reset' && styles.ccToggleBtnActive]}
-                  onPress={() => {
-                    setCreateMode('reset');
-                    setCounsellorForm({
-                      name: counsellorForm.name || selectedCounsellor?.name || '',
-                      email: selectedCounsellor?.email || counsellorForm.email || '',
-                      pin: '',
-                      oldPin: '',
-                      newPin: ''
-                    });
-                    setCounsellorFormError('');
-                  }}
-                >
-                  <Ionicons name="key-outline" size={14} color={createMode === 'reset' ? '#fff' : COLORS.muted} />
-                  <Text style={[styles.ccToggleTxt, createMode === 'reset' && styles.ccToggleTxtActive]}>Forgot PIN</Text>
+          <View style={[styles.settingsCard, { maxHeight: '80%' }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.settingsHeader}>
+                <Text style={styles.settingsTitle}>My Profile</Text>
+                <TouchableOpacity onPress={() => setProfileVisible(false)}>
+                  <Ionicons name="close" size={20} color={COLORS.muted} />
                 </TouchableOpacity>
               </View>
 
-              {/* Counsellor name (create mode only) */}
-              {createMode === 'create' && (
-                <View style={styles.ccFieldGroup}>
-                  <Text style={styles.ccFieldLabel}>Counsellor Name</Text>
-                  <TouchableOpacity
-                    style={styles.ccInputWrap}
-                    onPress={() => setShowCounsellorNameDropdown((prev) => !prev)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="person-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
-                    <Text style={displayedCounsellorName ? styles.ccInputValue : styles.ccInputPlaceholder} numberOfLines={1}>
-                      {displayedCounsellorName || 'Select your name'}
-                    </Text>
-                    <Ionicons name={showCounsellorNameDropdown ? 'chevron-up' : 'chevron-down'} size={16} color={COLORS.muted} />
-                  </TouchableOpacity>
-
-                  {showCounsellorNameDropdown && (
-                    <View style={styles.ccDropdownList}>
-                      <TextInput
-                        style={styles.ccDropdownSearch}
-                        placeholder="Search counsellor name..."
-                        placeholderTextColor={COLORS.muted}
-                        value={counsellorSearch}
-                        onChangeText={setCounsellorSearch}
-                      />
-                      {/* Fixed: Replaced FlatList with ScrollView and map */}
-                      <ScrollView
-                        style={{ maxHeight: 160 }}
-                        showsVerticalScrollIndicator={true}
-                        keyboardShouldPersistTaps="handled"
-                      >
-                        {counsellors
-                          .filter((c) => (c.name || '').toLowerCase().includes((counsellorSearch || '').toLowerCase()))
-                          .map((item) => (
-                            <TouchableOpacity
-                              key={item.email}
-                              style={styles.ccDropdownItem}
-                              onPress={() => {
-                                setSelectedCounsellor(item);
-                                setCounsellorForm((prev) => ({ ...prev, name: item.name, email: item.email }));
-                                setShowCounsellorNameDropdown(false);
-                                setCounsellorSearch('');
-                              }}
-                            >
-                              <Ionicons name="person-circle-outline" size={18} color={COLORS.navy} />
-                              <Text style={styles.ccDropdownItemTxt}>{item.name}</Text>
-                            </TouchableOpacity>
-                          ))}
-                        {counsellors.filter((c) => (c.name || '').toLowerCase().includes((counsellorSearch || '').toLowerCase())).length === 0 && (
-                          <Text style={styles.ccDropdownEmpty}>No matching counsellor.</Text>
-                        )}
-                      </ScrollView>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* Email — auto-fills when a counsellor name is selected */}
-              <View style={styles.ccFieldGroup}>
-                <Text style={styles.ccFieldLabel}>Counsellor Email</Text>
-                <View style={styles.ccInputWrap}>
-                  <Ionicons name="mail-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
-                  <TextInput
-                    style={styles.ccTextInput}
-                    placeholder="you@example.com"
-                    placeholderTextColor={COLORS.muted}
-                    value={counsellorForm.email}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    onChangeText={(t) => setCounsellorForm({ ...counsellorForm, email: t })}
-                  />
+              <View style={styles.profileRow}>
+                <Ionicons name="person-circle-outline" size={48} color={COLORS.navy} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.profileName}>{sessionUser?.name || 'Staff Account'}</Text>
+                  <Text style={styles.profileMeta}>{sessionUser?.email || 'No email'}</Text>
                 </View>
               </View>
 
-              {/* PIN field(s) */}
-              {createMode === 'create' ? (
-                <View style={styles.ccFieldGroup}>
-                  <Text style={styles.ccFieldLabel}>New 6-Digit PIN</Text>
-                  <View style={styles.ccInputWrap}>
-                    <Ionicons name="lock-closed-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
-                    <TextInput
-                      style={[styles.ccTextInput, styles.ccPinTextInput]}
-                      placeholder="● ● ● ● ● ●"
-                      placeholderTextColor={COLORS.muted}
-                      value={counsellorForm.pin}
-                      keyboardType="number-pad"
-                      maxLength={6}
-                      secureTextEntry
-                      onChangeText={(t) => setCounsellorForm({ ...counsellorForm, pin: t.replace(/[^0-9]/g, '').slice(0, 6) })}
-                    />
-                  </View>
+              <View style={[styles.profileDetailBox, { marginTop: 16 }]}>
+                <View style={styles.profileDetailRow}>
+                  <Text style={styles.profileDetailLabel}>Full Name</Text>
+                  <Text style={styles.profileDetailValue}>{sessionUser?.name || 'N/A'}</Text>
                 </View>
-              ) : (
-                <>
-                  <View style={styles.ccFieldGroup}>
-                    <Text style={styles.ccFieldLabel}>Old 6-Digit PIN</Text>
-                    <View style={styles.ccInputWrap}>
-                      <Ionicons name="lock-open-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
-                      <TextInput
-                        style={[styles.ccTextInput, styles.ccPinTextInput]}
-                        placeholder="● ● ● ● ● ●"
-                        placeholderTextColor={COLORS.muted}
-                        value={counsellorForm.oldPin}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        secureTextEntry
-                        onChangeText={(t) => setCounsellorForm({ ...counsellorForm, oldPin: t.replace(/[^0-9]/g, '').slice(0, 6) })}
-                      />
-                    </View>
-                  </View>
-                  <View style={styles.ccFieldGroup}>
-                    <Text style={styles.ccFieldLabel}>New 6-Digit PIN</Text>
-                    <View style={styles.ccInputWrap}>
-                      <Ionicons name="lock-closed-outline" size={17} color={COLORS.navy} style={styles.ccInputIcon} />
-                      <TextInput
-                        style={[styles.ccTextInput, styles.ccPinTextInput]}
-                        placeholder="● ● ● ● ● ●"
-                        placeholderTextColor={COLORS.muted}
-                        value={counsellorForm.newPin}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        secureTextEntry
-                        onChangeText={(t) => setCounsellorForm({ ...counsellorForm, newPin: t.replace(/[^0-9]/g, '').slice(0, 6) })}
-                      />
-                    </View>
-                  </View>
-                </>
-              )}
-
-              {counsellorFormError ? (
-                <View style={styles.pinErrorRow}>
-                  <Ionicons name="alert-circle" size={14} color={COLORS.red} />
-                  <Text style={styles.pinErrorTxt}>{counsellorFormError}</Text>
+                <View style={[styles.profileDetailRow, { borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12, marginTop: 12 }]}>
+                  <Text style={styles.profileDetailLabel}>Email</Text>
+                  <Text style={styles.profileDetailValue}>{sessionUser?.email || 'N/A'}</Text>
                 </View>
-              ) : null}
+                <View style={[styles.profileDetailRow, { borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12, marginTop: 12 }]}>
+                  <Text style={styles.profileDetailLabel}>Role</Text>
+                  <Text style={styles.profileDetailValue}>{sessionUser?.role || 'Staff'}</Text>
+                </View>
+                <View style={[styles.profileDetailRow, { borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12, marginTop: 12 }]}>
+                  <Text style={styles.profileDetailLabel}>Last Login</Text>
+                  <Text style={styles.profileDetailValue}>{profileLastLogin}</Text>
+                </View>
+                <View style={[styles.profileDetailRow, { borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12, marginTop: 12 }]}>
+                  <Text style={styles.profileDetailLabel}>2FA</Text>
+                  <Text style={styles.profileDetailValue}>{twoFactorEnabled ? 'Enabled' : 'Disabled'}</Text>
+                </View>
+              </View>
 
               <TouchableOpacity
-                onPress={handleCounsellorFormSubmit}
-                disabled={counsellorFormLoading}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={[COLORS.navy, COLORS.blue]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[styles.ccPrimaryBtn, counsellorFormLoading && styles.pinBtnDisabled]}
-                >
-                  {counsellorFormLoading ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <>
-                      {/* <Ionicons name={createMode === 'create' ? 'checkmark-circle' : 'save'} size={18} color="#fff" /> */}
-                      <Text style={styles.pinBtnTxt}>{createMode === 'create' ? 'Create Login' : 'Save New PIN'}</Text>
-                    </>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.linkBtn}
+                style={[styles.profileActionBtn, { marginTop: 16 }]}
                 onPress={() => {
-                  setShowCreateCounsellorModal(false);
-                  setShowCounsellorPicker(true);
-                  setCounsellorFormError('');
+                  setProfileVisible(false);
+                  navigation.navigate('ForgotPassword', { email: sessionUser?.email || '', type: profileType });
                 }}
               >
-                <Text style={styles.linkBtnText}>Already have a login? Use existing counsellor login</Text>
+                {/* <Ionicons name="key-outline" size={18} color={COLORS.navy} /> */}
+                <Text style={styles.profileActionBtnText}>Change Password</Text>
               </TouchableOpacity>
+
+              <View style={[styles.profileDetailBox, { marginTop: 12, backgroundColor: COLORS.navy + '10' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  {/* <Ionicons name="shield-checkmark" size={18} color={COLORS.navy} /> */}
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.navy }}>Account Security</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: COLORS.muted, marginBottom: 10 }}>
+                  {twoFactorEnabled
+                    ? 'Two-Factor Authentication is enabled. A verification code will be sent to your email when you sign in.'
+                    : 'Two-Factor Authentication is currently disabled. Enable it in Settings to add an extra layer of security to your account.'}
+                </Text>
+              </View>
             </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* ── PIN Lock Modal ── */}
-      <Modal
-        visible={pinModalVisible}
-        animationType="fade"
-        transparent
-        onRequestClose={() => { if (!pinLoading) { setPinModalVisible(false); setPin(''); setPinError(''); } }}
-      >
+      <Modal visible={settingsVisible} transparent animationType="fade">
         <View style={styles.modalBg}>
-          <View style={[styles.pinSheet, { paddingBottom: insets.bottom + 16 }]}>
-
-            {/* Header */}
-            <View style={styles.pinHeader}>
-              <View style={styles.pinIconWrap}>
-                <Ionicons name="lock-closed" size={24} color={COLORS.navy} />
-              </View>
-              <Text style={styles.pinTitle}>{isCounsellorFlow ? 'Counsellor Login' : 'CF Staff Access'}</Text>
-              <Text style={styles.pinSub}>
-                {isCounsellorFlow
-                  ? `Logged in as: ${selectedCounsellor?.name}\nEnter Counsellor PIN`
-                  : 'Enter your 6-digit PIN to continue'
-                }
-              </Text>
-            </View>
-
-            {/* Counsellor dropdown */}
-            {isCounsellorFlow ? (
-              <View style={styles.dropdownWrap}>
-                <TouchableOpacity
-                  style={styles.dropdownButton}
-                  onPress={() => setShowCounsellorDropdown((prev) => !prev)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.dropdownLabel}>Counsellor name</Text>
-                    <Text style={styles.dropdownValue}>{selectedCounsellor?.name || 'Select your name'}</Text>
-                  </View>
-                  <Ionicons name={showCounsellorDropdown ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.muted} />
+          <View style={[styles.settingsCard, { maxHeight: '85%' }]}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: 20 }} >
+              <View style={styles.settingsHeader}>
+                <Text style={styles.settingsTitle}>Settings</Text>
+                <TouchableOpacity onPress={() => setSettingsVisible(false)}>
+                  <Ionicons name="close" size={20} color={COLORS.muted} />
                 </TouchableOpacity>
+              </View>
 
-                {showCounsellorDropdown ? (
-                  <View style={styles.dropdownList}>
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Search your name..."
-                      placeholderTextColor={COLORS.muted}
-                      value={counsellorSearch}
-                      onChangeText={setCounsellorSearch}
-                    />
-                    <FlatList
-                      data={counsellors.filter((c) => (c.name || '').toLowerCase().includes((counsellorSearch || '').toLowerCase()))}
-                      keyExtractor={(item) => item.email}
-                      style={{ maxHeight: 180 }}
-                      keyboardShouldPersistTaps="handled"
-                      renderItem={({ item }) => (
+              <View style={styles.settingsSwitchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.settingsLabel}>Two-Factor Authentication</Text>
+                  <Text style={{ fontSize: 12, color: COLORS.muted, marginTop: 2 }}>
+                    {twoFactorEnabled
+                      ? 'Two-factor authentication is enabled. A 6-digit verification code will be sent to your email when you sign in.'
+                      : 'Enable two-factor authentication to add an extra layer of security to your account.'}
+                  </Text>
+                </View>
+                <Switch
+                  value={settingsState.enabled}
+                  onValueChange={handleSettingsTwoFactorToggle}
+                  thumbColor={COLORS.white}
+                  trackColor={{ false: COLORS.border, true: COLORS.blue }}
+                  disabled={settingsState.loading}
+                />
+              </View>
+
+              {settingsState.setupVisible ? (
+                <View style={styles.settingsBox}>
+                  <Text style={styles.settingsBoxText}>
+                    Scan the QR code with your authenticator app, or enter the setup key manually. Then enter the 6-digit code from the app to verify.
+                  </Text>
+                  {settingsState.qrCodeUri ? (
+                    <View style={styles.qrCard}>
+                      <Text style={styles.qrTitle}>Set Up Authenticator</Text>
+
+                      <Image
+                        source={{
+                          uri: `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+                            settingsState.qrCodeUri
+                          )}`,
+                        }}
+                        style={styles.qrImage}
+                      />
+
+                      {/* <Text style={styles.qrText}>
+                        Scan the QR code with your authenticator app.
+                      </Text> */}
+
+                      <Text
+                        style={{ fontSize: 14, color: COLORS.muted, textAlign: 'center' }} > OR </Text>
+
+                      {/* Manual Code */}
+                      <View style={styles.manualCodeRow}>
+                        <Text style={styles.manualCodeText} selectable>
+                          {settingsState.manualCode}
+                        </Text>
+
                         <TouchableOpacity
-                          style={[styles.pItem, selectedCounsellor?.email === item.email && styles.pItemSel]}
-                          onPress={() => {
-                            setSelectedCounsellor(item);
-                            setShowCounsellorDropdown(false);
-                            setTimeout(() => pinInputRef.current?.focus(), 200);
+                          style={styles.copyCodeBtn}
+                          onPress={async () => {
+                            await Clipboard.setStringAsync(settingsState.manualCode);
+                            Alert.alert('Copied', 'Manual setup key copied to clipboard.');
                           }}
                         >
-                          <Ionicons name="person-outline" size={16} color={COLORS.navy} />
-                          <Text style={styles.pLabel}>{item.name}</Text>
+                          <Ionicons
+                            name="copy-outline"
+                            size={18}
+                            color={COLORS.navy}
+                          />
+                          {/* <Text style={styles.copyCodeText}>Copy</Text> */}
                         </TouchableOpacity>
-                      )}
-                    />
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-
-            {!isCounsellorFlow ? (
-              <View style={styles.twoFactorSection}>
-                <Text style={styles.twoFactorTitle}>Staff authenticator</Text>
-                <Text style={styles.twoFactorSub}>Use the authenticator app only for staff accounts.</Text>
-                <TextInput
-                  style={styles.staffEmailInput}
-                  value={staffEmail}
-                  onChangeText={setStaffEmail}
-                  placeholder="Staff email"
-                  placeholderTextColor={COLORS.muted}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity style={styles.twoFactorBtn} onPress={handleSetupTwoFactor} disabled={twoFactorState.loading}>
-                  <Text style={styles.twoFactorBtnText}>{twoFactorState.setupVisible ? 'Reconfigure authenticator' : 'Set up authenticator'}</Text>
-                </TouchableOpacity>
-                {twoFactorState.setupVisible ? (
-                  <View style={styles.twoFactorCard}>
-                    <Text style={styles.twoFactorHint}>Scan the QR code in your authenticator app, then enter the 6-digit code below.</Text>
-                    <TextInput
-                      style={styles.twoFactorInput}
-                      value={twoFactorState.otp}
-                      onChangeText={(t) => setTwoFactorState((prev) => ({ ...prev, otp: t.replace(/\D/g, '').slice(0, 6) }))}
-                      keyboardType="number-pad"
-                      maxLength={6}
-                      placeholder="Enter code"
-                      placeholderTextColor={COLORS.muted}
-                    />
-                    <View style={styles.twoFactorActions}>
-                      <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleToggleTwoFactor(true)} disabled={twoFactorState.loading || !twoFactorState.otp}>
-                        <Text style={styles.secondaryBtnText}>Enable</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleToggleTwoFactor(false)} disabled={twoFactorState.loading || !twoFactorState.otp}>
-                        <Text style={styles.secondaryBtnText}>Disable</Text>
-                      </TouchableOpacity>
+                      </View>
                     </View>
-                    {twoFactorState.qrCodeUri ? <Text style={styles.qrCodeText}>{twoFactorState.qrCodeUri}</Text> : null}
+                  ) : null}
+                  <View style={{ marginTop: 10 }}>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '700',
+                        color: COLORS.navy,
+                        marginBottom: 5,
+                      }}
+                    >
+                      Verification Code
+                    </Text>
+
+                    <Text style={{ fontSize: 11, color: COLORS.muted, marginBottom: 8 }}>
+                      Enter the 6-digit code shown in your authenticator app.
+                    </Text>
+
+                    <TextInput style={[ styles.twoFactorInput, { 
+                          textAlign: 'center',
+                          fontSize: 20,
+                          fontWeight: '700',
+                          letterSpacing: 6,
+                          marginBottom: 8,
+                        },
+                      ]}
+                      value={settingsState.otp}
+                      onChangeText={(text) =>
+                        setSettingsState((prev) => ({
+                          ...prev,
+                          otp: text.replace(/\D/g, '').slice(0, 6),
+                        }))
+                      }
+                      placeholder="000000"
+                      placeholderTextColor={COLORS.muted}
+                      keyboardType="number-pad"
+                      inputMode="numeric"
+                      textContentType="oneTimeCode"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      returnKeyType="done"
+                    />
                   </View>
-                ) : null}
+                  <TouchableOpacity
+                    style={[styles.secondaryBtn, { marginTop: 4 }]}
+                    onPress={handleConfirmSettingsCode}
+                    disabled={settingsState.loading || settingsState.otp.trim().length !== 6}
+                  >
+                    <Text style={styles.secondaryBtnText}>{settingsState.loading ? 'Verifying...' : 'Confirm code'}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              <View style={[styles.profileDetailBox, { marginTop: 12, backgroundColor: COLORS.navy + '10' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <Ionicons name="information-circle" size={18} color={COLORS.navy} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.navy }}>About Two-Factor Authentication</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: COLORS.muted, marginBottom: 10 }}>
+                  Two-factor authentication adds an extra layer of security. When enabled, you'll need your password and a 6-digit code from your authenticator app to sign in.
+                </Text>
               </View>
-            ) : null}
-
-            {/* PIN input */}
-            <TextInput
-              ref={pinInputRef}
-              style={styles.pinInput}
-              value={pin}
-              onChangeText={(t) => { setPin(t.replace(/[^0-9]/g, '').slice(0, 6)); setPinError(''); }}
-              keyboardType="number-pad"
-              maxLength={6}
-              secureTextEntry
-              placeholder="● ● ● ● ● ●"
-              placeholderTextColor={COLORS.muted}
-              textAlign="center"
-              onSubmitEditing={handlePinSubmit}
-            />
-
-            {/* Dot indicators */}
-            {/* <View style={styles.dotsRow}>
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <View key={i} style={[styles.dot, i < pin.length && styles.dotFilled]} />
-              ))}
-            </View> */}
-
-            {/* Error */}
-            {pinError ? (
-              <View style={styles.pinErrorRow}>
-                <Ionicons name="alert-circle" size={14} color={COLORS.red} />
-                <Text style={styles.pinErrorTxt}>{pinError}</Text>
-              </View>
-            ) : null}
-
-            {/* Buttons */}
-            <TouchableOpacity
-              style={[styles.pinBtn, (pin.length !== 6 || pinLoading) && styles.pinBtnDisabled]}
-              onPress={handlePinSubmit}
-              disabled={pin.length !== 6 || pinLoading}
-            >
-              {pinLoading
-                ? <ActivityIndicator color="#fff" size="small" />
-                : (
-                  <>
-                    {/* <Ionicons name="arrow-forward" size={18} color="#fff" /> */}
-                    <Text style={styles.pinBtnTxt}>Verify & Enter</Text>
-                  </>
-                )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.pinCancelBtn}
-              onPress={() => { if (!pinLoading) { setPinModalVisible(false); setPin(''); setPinError(''); } }}
-              disabled={pinLoading}
-            >
-              <Text style={styles.pinCancelTxt}>Cancel</Text>
-            </TouchableOpacity>
-
-            {/* "Forgot PIN?" is only for Counsellors because each has an individual PIN.
-                  It was removed from the CF Portal since it uses a shared staff PIN. */}
-            {isCounsellorFlow && (
-              <TouchableOpacity
-                style={styles.pinCancelBtn}
-                onPress={() => {
-                  setPinModalVisible(false);
-                  setPin('');
-                  setPinError('');
-                  setCreateMode('reset');
-                  setCounsellorForm({ name: '', email: selectedCounsellor?.email || '', pin: '', oldPin: '', newPin: '' });
-                  setCounsellorFormError('');
-                  setShowCreateCounsellorModal(true);
-                }}
-                disabled={pinLoading}
-              >
-                <Text style={styles.pinCancelTxt}>Forgot PIN?</Text>
-              </TouchableOpacity>
-            )}
-
+            </ScrollView>
           </View>
         </View>
       </Modal>
     </View>
   );
 }
-
 const createStyles = (COLORS) => StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg },
-  hero: { alignItems: 'center', paddingBottom: 32 },
+  hero: { alignItems: 'center', paddingBottom: 32, position: 'relative' },
+  heroActions: { position: 'absolute', top: 20, right: 20 },
+  heroProfileWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, paddingLeft: 12, paddingRight: 4, paddingVertical: 4, gap: 10 },
+  heroProfileInfo: { alignItems: 'flex-end', justifyContent: 'center' },
+  heroProfileName: { color: '#fff', fontSize: 13, fontWeight: '700', maxWidth: 120 },
+  heroProfileRole: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '600' },
+  heroLogoutBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6, gap: 4 },
+  heroLogoutTxt: { color: COLORS.navy, fontSize: 11, fontWeight: '700' },
   logoMark: {
     width: 60, height: 60, borderRadius: 15,
     backgroundColor: 'rgba(255,255,255,0.15)',
@@ -973,6 +715,7 @@ const createStyles = (COLORS) => StyleSheet.create({
     overflow: 'hidden'
   },
   brand: { color: COLORS.white, fontSize: 22, fontWeight: '800' },
+  poppinsSemiBold: { fontFamily: 'Poppins_600SemiBold', fontWeight: '600' },
   tag: { color: 'rgba(255,255,255,0.5)', fontSize: 10, letterSpacing: 2.5, textTransform: 'uppercase', fontWeight: '700', marginTop: 3 },
   scroll: { padding: 20, paddingBottom: 40 },
   heading: { fontSize: 24, fontWeight: '800', color: COLORS.navy, marginTop: 4, marginBottom: 4 },
@@ -996,9 +739,8 @@ const createStyles = (COLORS) => StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 2,
   },
   lockBadgeTxt: { fontSize: 10, fontWeight: '700', color: COLORS.navy },
-  footer: { textAlign: 'center', color: COLORS.muted, fontSize: 12, marginTop: 20 },
+  footer: { textAlign: 'center', color: COLORS.muted, fontSize: 12, marginTop: 360 },
 
-  // ── PIN Modal ──
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   drawerOverlay: { flex: 1, flexDirection: 'row' },
   drawerBackdrop: { flex: 1, backgroundColor: 'rgba(2,6,23,0.35)' },
@@ -1021,9 +763,15 @@ const createStyles = (COLORS) => StyleSheet.create({
   qrTitle: { fontSize: 12, fontWeight: '700', color: COLORS.navy, marginBottom: 8 },
   qrImage: { width: 180, height: 180, marginBottom: 8, borderRadius: 12 },
   qrText: { fontSize: 12, color: COLORS.text, textAlign: 'center' },
-  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8, marginBottom: 16 },
   profileName: { fontSize: 15, fontWeight: '800', color: COLORS.navy },
   profileMeta: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
+  profileDetailBox: { backgroundColor: COLORS.bg, borderRadius: 12, padding: 14 },
+  profileDetailRow: { paddingVertical: 0 },
+  profileDetailLabel: { fontSize: 12, fontWeight: '600', color: COLORS.muted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  profileDetailValue: { fontSize: 13, fontWeight: '700', color: COLORS.navy, marginTop: 4 },
+  profileActionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: COLORS.navy, borderRadius: 12, paddingVertical: 12 },
+  profileActionBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   pinSheet: {
     backgroundColor: COLORS.white, borderRadius: 24, width: '100%',
     padding: 28, alignItems: 'center',
@@ -1069,6 +817,10 @@ const createStyles = (COLORS) => StyleSheet.create({
   twoFactorCard: { marginTop: 10, padding: 10, borderRadius: 12, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
   twoFactorHint: { fontSize: 12, color: COLORS.text, marginBottom: 8 },
   twoFactorInput: { backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 10, fontSize: 14, color: COLORS.text, marginBottom: 8 },
+  manualCodeRow: { flexDirection: 'row', alignItems: 'center', width: '100%', marginTop: 10, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, backgroundColor: COLORS.bg, paddingLeft: 12, overflow: 'hidden' },
+  manualCodeText: { flex: 1, fontSize: 12, fontWeight: '700', color: COLORS.navy, letterSpacing: 1 },
+  copyCodeBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 12, paddingVertical: 11, borderLeftWidth: 1, borderLeftColor: COLORS.border, backgroundColor: COLORS.white },
+  copyCodeText: { fontSize: 12, fontWeight: '700', color: COLORS.navy },
   twoFactorActions: { flexDirection: 'row', gap: 8 },
   secondaryBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: COLORS.navy },
   secondaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
@@ -1078,7 +830,6 @@ const createStyles = (COLORS) => StyleSheet.create({
   pinCancelBtn: { paddingVertical: 10 },
   pinCancelTxt: { color: COLORS.muted, fontSize: 14, fontWeight: '600' },
 
-  // Counsellor picker sheet
   sheet: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, width: '100%', maxHeight: '60%' },
   sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sheetTitle: { fontSize: 17, fontWeight: '700', color: COLORS.text },
@@ -1123,7 +874,6 @@ const createStyles = (COLORS) => StyleSheet.create({
   pItemSel: { backgroundColor: COLORS.accent + '18' },
   pLabel: { fontSize: 14, fontWeight: '600', color: COLORS.text, flex: 1 },
 
-  // ── Create/Reset Counsellor Login — beautiful centered popup ──
   ccOverlay: { flex: 1, backgroundColor: 'rgba(10,36,99,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   ccCard: {
     width: '100%', maxWidth: 440, maxHeight: '90%', backgroundColor: COLORS.white, borderRadius: 28,
