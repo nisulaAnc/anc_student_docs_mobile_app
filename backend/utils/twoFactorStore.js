@@ -1,43 +1,38 @@
-const fs = require('fs');
-const path = require('path');
+const TwoFactorEntry = require('../models/TwoFactorEntry');
 
-const storePath = path.join(__dirname, '..', 'config', 'two-factor.json');
-
-function readStore() {
+/**
+ * Retrieve a 2FA entry for the given email.
+ * Returns null if not found.
+ */
+async function getTwoFactorEntry(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return null;
   try {
-    if (!fs.existsSync(storePath)) {
-      return {};
-    }
-    const raw = fs.readFileSync(storePath, 'utf8');
-    return raw ? JSON.parse(raw) : {};
-  } catch (error) {
-    return {};
+    const doc = await TwoFactorEntry.findOne({ email: normalized }).lean();
+    return doc || null;
+  } catch (err) {
+    console.error('getTwoFactorEntry error:', err.message);
+    return null;
   }
 }
 
-function writeStore(data) {
-  fs.mkdirSync(path.dirname(storePath), { recursive: true });
-  fs.writeFileSync(storePath, JSON.stringify(data, null, 2));
-}
-
-function getTwoFactorEntry(email) {
+/**
+ * Upsert a 2FA entry for the given email, merging the given payload.
+ */
+async function setTwoFactorEntry(email, payload) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!normalized) return null;
-  const store = readStore();
-  return store[normalized] || null;
-}
-
-function setTwoFactorEntry(email, payload) {
-  const normalized = String(email || '').trim().toLowerCase();
-  if (!normalized) return null;
-  const store = readStore();
-  store[normalized] = {
-    ...(store[normalized] || {}),
-    ...payload,
-    email: normalized,
-  };
-  writeStore(store);
-  return store[normalized];
+  try {
+    const doc = await TwoFactorEntry.findOneAndUpdate(
+      { email: normalized },
+      { $set: { ...payload, email: normalized } },
+      { upsert: true, new: true, runValidators: true }
+    ).lean();
+    return doc;
+  } catch (err) {
+    console.error('setTwoFactorEntry error:', err.message);
+    return null;
+  }
 }
 
 module.exports = {
