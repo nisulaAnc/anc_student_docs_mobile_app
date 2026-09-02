@@ -37,12 +37,13 @@ export const registerCounsellorAccount = (data) => api.post('/cf/counsellor/regi
 export const resetCounsellorPin = (data) => api.post('/cf/counsellor/reset-pin', data);
 
 export const setupTwoFactor = (data) => api.post('/cf/two-factor/setup', data);
-
+export const sendTwoFactorEmailCode = (data) => api.post('/cf/two-factor/send-email-code', data);
 export const enableTwoFactor = (data) => api.post('/cf/two-factor/enable', data);
 
 // Staff auth (register/login/forgot/reset)
 export const registerStaff = (data) => api.post('/cf/staff/register', data);
 export const loginStaff = (data) => api.post('/cf/staff/login', data);
+export const sendLoginOtp = (data) => api.post('/cf/staff/send-login-otp', data);
 export const forgotPassword = (data) => api.post('/cf/staff/forgot-password', data);
 export const resetPassword = (data) => api.post('/cf/staff/reset-password', data);
 
