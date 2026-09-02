@@ -10,6 +10,7 @@ const { resolveCounsellorPinReset } = require('../utils/counsellorSheet');
 const { generateSecret, generateOtpAuthUri, verifyTotp, verifyEmailCode } = require('../utils/twoFactor');
 const { getTwoFactorEntry, setTwoFactorEntry } = require('../utils/twoFactorStore');
 const { setResetToken, getResetEntry, clearResetEntry } = require('../utils/passwordResetStore');
+const { validateResetPasswordPayload } = require('../utils/passwordResetValidation');
 
 const resolveTwoFactorVerification = (entry, otp) => {
   if (!entry?.enabled) return true;
@@ -904,14 +905,21 @@ const forgotPassword = async (req, res) => {
 };
 
 // POST /api/cf/staff/reset-password
-// Body: { email, token, newPassword }
+// Body: { email, token?, newPassword, confirmPassword? }
 const resetPassword = async (req, res) => {
   try {
-    const { email, token, newPassword } = req.body;
-    if (!email || !token || !newPassword) return res.status(400).json({ success: false, message: 'Email, token and newPassword are required.' });
+    const payload = validateResetPasswordPayload(req.body);
+    if (!payload.valid) {
+      return res.status(400).json({ success: false, message: payload.error });
+    }
 
-    const entry = getResetEntry(email);
-    if (!entry || entry.token !== token) return res.status(400).json({ success: false, message: 'Invalid or expired reset token.' });
+    const { email, token, newPassword } = payload;
+    if (token) {
+      const entry = getResetEntry(email);
+      if (!entry || entry.token !== token) {
+        return res.status(400).json({ success: false, message: 'Invalid or expired reset token.' });
+      }
+    }
 
     const counsellors = await getCounsellors();
     const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
