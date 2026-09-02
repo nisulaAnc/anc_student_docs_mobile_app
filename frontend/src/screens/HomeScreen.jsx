@@ -531,7 +531,11 @@ const handleConfirmSettingsCode = async () => {
                 style={[styles.profileActionBtn, { marginTop: 16 }]}
                 onPress={() => {
                   setProfileVisible(false);
-                  navigation.navigate('ForgotPassword', { email: sessionUser?.email || '', type: profileType });
+                  navigation.navigate('ForgotPassword', {
+                    email: sessionUser?.email || '',
+                    type: profileType,
+                    mode: 'profile',
+                  });
                 }}
               >
                 {/* <Ionicons name="key-outline" size={18} color={COLORS.navy} /> */}

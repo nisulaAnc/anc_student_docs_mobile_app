@@ -203,7 +203,7 @@ export default function StaffLoginScreen({ navigation, route }) {
       await forgotPassword({ email: selected.email });
       setForgotSent(true);
       setError('');
-      navigation.navigate('ForgotPassword', { email: selected.email, type });
+      navigation.navigate('ForgotPassword', { email: selected.email, type, mode: 'reset' });
     } catch (e) {
       const message = e.response?.data?.message || e.message || 'Unable to send reset email. Try again.';
       setError(message);
