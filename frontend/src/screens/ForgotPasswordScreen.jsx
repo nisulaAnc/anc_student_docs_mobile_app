@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
-import { resetPassword } from '../services/api';
+import { resetPassword, changePassword } from '../services/api';
 
 export default function ForgotPasswordScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
@@ -15,10 +15,14 @@ export default function ForgotPasswordScreen({ navigation, route }) {
 
   const emailParam = route.params?.email || '';
   const type = route.params?.type || 'cf';
+  const mode = route.params?.mode || 'reset';
 
   const [email, setEmail] = useState(emailParam);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [resetCode, setResetCode] = useState('');
   const [newPassword, setNewPass] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [showConf, setShowConf] = useState(false);
 
@@ -39,27 +43,51 @@ export default function ForgotPasswordScreen({ navigation, route }) {
     const emailTrimmed = email.trim().toLowerCase();
 
     if (!emailTrimmed) return setError('Please enter your email address.');
+
+    if (mode === 'profile') {
+      if (!currentPassword.trim()) return setError('Please enter your current password.');
+    } else if (!resetCode.trim()) {
+      return setError('Please enter the reset code sent to your email.');
+    }
+
     if (!newPassword) return setError('Please enter a new password.');
     if (newPassword.length < 6) return setError('Password must be at least 6 characters.');
     if (newPassword !== confirm) return setError('Passwords do not match.');
 
     setLoading(true);
     try {
-      const res = await resetPassword({
-        email: emailTrimmed,
-        newPassword,
-        confirmPassword: confirm,
-      });
+      const payload = mode === 'profile'
+        ? {
+          email: emailTrimmed,
+          currentPassword: currentPassword.trim(),
+          newPassword,
+          confirmPassword: confirm,
+        }
+        : {
+          email: emailTrimmed,
+          token: resetCode.trim(),
+          newPassword,
+          confirmPassword: confirm,
+        };
+
+      const res = mode === 'profile'
+        ? await changePassword(payload)
+        : await resetPassword(payload);
 
       if (res.data?.success) {
-        setSuccess('Password reset successfully! You can now log in with your new password.');
+        const successMessage = mode === 'profile'
+          ? 'Password changed successfully!'
+          : 'Password reset successfully! You can now log in with your new password.';
+        setSuccess(successMessage);
+        setCurrentPassword('');
+        setResetCode('');
         setNewPass('');
         setConfirm('');
       } else {
-        setError(res.data?.message || 'Failed to reset password.');
+        setError(res.data?.message || 'Failed to update password.');
       }
     } catch (e) {
-      setError(e.response?.data?.message || e.message || 'Failed to reset password.');
+      setError(e.response?.data?.message || e.message || 'Failed to update password.');
     } finally {
       setLoading(false);
     }
@@ -87,10 +115,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
             {/* <View style={styles.iconCircle}>
               <Ionicons name="key" size={28} color="#fff" />
             </View> */}
-            <Text style={styles.title}>Reset Password</Text>
-            {/* <Text style={styles.subtitle}>
-              Enter your email and choose a new password to continue.
-            </Text> */}
+            <Text style={styles.title}>{mode === 'profile' ? 'Change Password' : 'Reset Password'}</Text>
           </View>
 
           {/* Card */}
@@ -107,6 +132,41 @@ export default function ForgotPasswordScreen({ navigation, route }) {
               keyboardType="email-address"
               autoCapitalize="none"
             />
+
+            {mode !== 'profile' && (
+              <>
+                <Text style={styles.label}>Reset Code</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter the reset code from your email"
+                  placeholderTextColor={COLORS.muted}
+                  value={resetCode}
+                  onChangeText={(text) => setResetCode(text.replace(/\s+/g, '').slice(0, 36))}
+                  autoCapitalize="none"
+                  keyboardType="default"
+                />
+              </>
+            )}
+
+            {mode === 'profile' && (
+              <>
+                <Text style={styles.label}>Current Password</Text>
+                <View style={styles.inputRow}>
+                  <TextInput
+                    style={styles.inputFlex}
+                    placeholder="Enter your current password"
+                    placeholderTextColor={COLORS.muted}
+                    value={currentPassword}
+                    onChangeText={setCurrentPassword}
+                    secureTextEntry={!showCurrentPass}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity onPress={() => setShowCurrentPass((v) => !v)} style={styles.eyeBtn}>
+                    <Ionicons name={showCurrentPass ? 'eye-off' : 'eye'} size={20} color={COLORS.muted} />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
 
             {/* New password */}
             <Text style={styles.label}>New Password</Text>
@@ -172,7 +232,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                 : (
                   <View style={styles.btnContent}>
                     {/* <Ionicons name="lock-closed" size={18} color="#fff" /> */}
-                    <Text style={styles.btnText}>Reset Password</Text>
+                    <Text style={styles.btnText}>{mode === 'profile' ? 'Update Password' : 'Reset Password'}</Text>
                   </View>
                 )
               }
