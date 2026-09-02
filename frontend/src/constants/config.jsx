@@ -1,12 +1,14 @@
 import { Platform } from 'react-native';
 
-//const LOCAL_IP = '10.10.10.15'; // <-- CHANGE THIS TO YOUR MACHINE IP
-//const PORT = 5000;
+// const LOCAL_IP = '192.168.8.101'; // <-- CHANGE THIS TO YOUR MACHINE IP
+// const PORT = 5000;
 
-//export const API_BASE_URL = `http://${LOCAL_IP}:${PORT}/api`;
+// export const API_BASE_URL = `http://${LOCAL_IP}:${PORT}/api`;
 
 // (limits.fileSize) so the client-side check and the server-side rejection agree.
 export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+
+// export const API_BASE_URL = 'https://ancmoodle.com/dms/backend/api';
 
 export const API_BASE_URL = 'https://anc-student-docs-mobile-app.vercel.app/api';
 
