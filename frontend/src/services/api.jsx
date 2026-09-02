@@ -46,6 +46,7 @@ export const loginStaff = (data) => api.post('/cf/staff/login', data);
 export const sendLoginOtp = (data) => api.post('/cf/staff/send-login-otp', data);
 export const forgotPassword = (data) => api.post('/cf/staff/forgot-password', data);
 export const resetPassword = (data) => api.post('/cf/staff/reset-password', data);
+export const changePassword = (data) => api.post('/cf/staff/change-password', data);
 
 export const getCounsellorTokenInfo = (token) =>
   api.get('/cf/counsellor/token-info', { params: { token } });
