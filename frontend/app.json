@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "ANC Student Docs",
+    "name": "DMS",
     "slug": "anc-student-docs",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/Docs logo.png",
     "splash": {
-      "image": "./assets/logo.png",
+      "image": "./assets/Docs logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#1E3A8A"
     },
