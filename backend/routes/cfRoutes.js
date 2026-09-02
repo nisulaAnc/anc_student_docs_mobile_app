@@ -7,6 +7,7 @@ const {
     sendLoginOtp,
     forgotPassword,
     resetPassword,
+    changePassword,
     getCounsellorTokenInfo,
     verifyCfPin,
     getDashboardStats,
@@ -27,6 +28,7 @@ router.post('/staff/login', loginStaff);
 router.post('/staff/send-login-otp', sendLoginOtp);
 router.post('/staff/forgot-password', forgotPassword);
 router.post('/staff/reset-password', resetPassword);
+router.post('/staff/change-password', changePassword);
 router.post('/counsellor/register', registerCounsellorAccount);
 router.post('/counsellor/reset-pin', resetCounsellorPin);
 router.post('/two-factor/setup', setupTwoFactor);

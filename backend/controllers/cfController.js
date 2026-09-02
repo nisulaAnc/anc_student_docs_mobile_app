@@ -10,7 +10,7 @@ const { resolveCounsellorPinReset } = require('../utils/counsellorSheet');
 const { generateSecret, generateOtpAuthUri, verifyTotp, verifyEmailCode } = require('../utils/twoFactor');
 const { getTwoFactorEntry, setTwoFactorEntry } = require('../utils/twoFactorStore');
 const { setResetToken, getResetEntry, clearResetEntry } = require('../utils/passwordResetStore');
-const { validateResetPasswordPayload } = require('../utils/passwordResetValidation');
+const { validateResetPasswordPayload, validatePasswordChangePayload } = require('../utils/passwordResetValidation');
 
 const resolveTwoFactorVerification = (entry, otp) => {
   if (!entry?.enabled) return true;
@@ -941,6 +941,44 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// POST /api/cf/staff/change-password
+// Body: { email, currentPassword, newPassword, confirmPassword }
+const changePassword = async (req, res) => {
+  try {
+    const payload = validatePasswordChangePayload(req.body);
+    if (!payload.valid) {
+      return res.status(400).json({ success: false, message: payload.error });
+    }
+
+    const { email, currentPassword, newPassword } = payload;
+    const counsellors = await getCounsellors();
+    const existing = counsellors.find((c) => String(c.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
+    if (!existing) return res.status(404).json({ success: false, message: 'Account not found.' });
+
+    const storedPassword = String(existing.pin || existing.password || '').trim();
+    if (!storedPassword) {
+      return res.status(401).json({ success: false, message: 'No password is set for this account.' });
+    }
+
+    if (storedPassword !== String(currentPassword).trim()) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+    }
+
+    await upsertCounsellorRecord({ name: existing.name, email, password: newPassword, role: existing.role });
+
+    try {
+      const html = emailHtml('Password Changed', `<p>Your password was updated successfully.</p>`);
+      await sendEmail(email, 'ANC Student Docs - Password Changed', html);
+    } catch (e) {
+      console.error('Email send error (changePassword):', e.message);
+    }
+
+    return res.json({ success: true, message: 'Password changed successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Unable to change password.' });
+  }
+};
+
 module.exports = {
   getCounsellorList,
   registerCF,
@@ -955,6 +993,7 @@ module.exports = {
   sendLoginOtp,
   forgotPassword,
   resetPassword,
+  changePassword,
   setupTwoFactor,
   sendTwoFactorEmailCode,
   enableTwoFactor,
