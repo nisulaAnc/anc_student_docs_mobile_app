@@ -4,10 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
-export default function TopBar({ onBack, rightText, onLogin, onRegister }) {
+export default function TopBar({ onBack, rightText, title, rightElement, showSecurityIcon = false, university = 'ANC' }) {
   const { colors: COLORS } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = createStyles(COLORS);
+  const normalizedUniversity = String(university || '').toUpperCase();
+  const logoSource = normalizedUniversity === 'UWL'
+    ? require('../../assets/UWL-Logo.png')
+    : normalizedUniversity === 'ANC'
+      ? require('../../assets/logo.png')
+      : require('../../assets/Docs logo.png');
   return (
     <View style={[styles.bar, { paddingTop: insets.top + 8 }]}>
       <View style={styles.leftContainer}>
@@ -18,7 +24,7 @@ export default function TopBar({ onBack, rightText, onLogin, onRegister }) {
         )}
         <View style={styles.logo}>
           <View style={styles.logoMark}>
-            <Image source={require('../../assets/logo.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
+            <Image source={logoSource} style={{ width: 22, height: 22 }} resizeMode="contain" />
           </View>
           {!onBack && (
             <View>
@@ -26,29 +32,27 @@ export default function TopBar({ onBack, rightText, onLogin, onRegister }) {
               <Text style={styles.logoTag}>Document Portal</Text>
             </View>
           )}
+          {onBack && title ? (
+            <Text style={styles.barTitle} numberOfLines={1}>{title}</Text>
+          ) : null}
         </View>
       </View>
-      {rightText ? (
+
+      {/* Right side: custom element, chip, or spacer */}
+      {rightElement ? (
+        rightElement
+      ) : rightText ? (
         <View style={styles.chip}>
           <Ionicons name="mail-outline" size={12} color={COLORS.accent} />
           <Text style={[styles.chipText, { color: COLORS.blue }]} numberOfLines={1}>{rightText}</Text>
         </View>
       ) : <View style={{ flex: 1 }} />}
 
-      {onLogin && onRegister ? (
-        <View style={styles.authRow}>
-          <TouchableOpacity onPress={onLogin} style={styles.authBtn}>
-            <Text style={styles.authBtnText}>Login</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onRegister} style={[styles.authBtn, styles.authBtnPrimary]}>
-            <Text style={[styles.authBtnText, styles.authBtnPrimaryText]}>Register</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
+      {showSecurityIcon ? (
         <View style={styles.themeToggle}>
           <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.navy} />
         </View>
-      )}
+      ) : <View style={{ width: 36 }} />}
     </View>
   );
 }
@@ -76,6 +80,7 @@ const createStyles = (COLORS) => StyleSheet.create({
   },
   logoName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
   logoTag: { fontSize: 9, color: COLORS.accent, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: '700' },
+  barTitle: { fontSize: 14, fontWeight: '700', color: COLORS.navy, maxWidth: 180 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: COLORS.bg, borderWidth: 1.5, borderColor: COLORS.border,
