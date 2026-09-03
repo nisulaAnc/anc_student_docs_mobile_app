@@ -16,7 +16,7 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: async (req, file) => {
-      const baseFolder = process.env.CLOUDINARY_FOLDER || 'anc_student_docs';
+      const baseFolder = process.env.CLOUDINARY_FOLDER || 'student_dms';
       let docName = 'Other';
       if (file.fieldname === 'agreement') {
         docName = 'Agreement';

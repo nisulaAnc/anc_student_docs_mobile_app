@@ -64,7 +64,7 @@ const getStudentTokenInfo = async (req, res) => {
 
 const escapeSheetFormulaValue = (value = '') => String(value).replace(/"/g, '""');
 
-const buildCloudinaryDownloadUrl = (url = '', publicId = '', fileName = '') => {
+const buildCloudinaryPreviewUrl = (url = '', publicId = '', fileName = '') => {
   if (publicId) {
     const ext = String(fileName).split('.').pop().toLowerCase();
     const resourceType = ['pdf', 'doc', 'docx'].includes(ext) ? 'raw' : 'image';
@@ -72,22 +72,18 @@ const buildCloudinaryDownloadUrl = (url = '', publicId = '', fileName = '') => {
     const options = {
       secure: true,
       resource_type: resourceType,
-      flags: 'attachment',
     };
     return cloudinary.url(publicIdWithoutExt, options);
   }
 
   if (!url || !url.includes('/upload/')) return url;
-  const [base, query = ''] = url.split('?');
-  if (base.includes('/upload/fl_attachment')) return url;
-  const downloadBase = base.replace(/\/upload\/(?!fl_attachment)/, '/upload/fl_attachment/');
-  return query ? `${downloadBase}?${query}` : downloadBase;
+  return url.replace('/upload/fl_attachment/', '/upload/');
 };
 
 const buildSheetHyperlink = (url, label, publicId, fileName) => {
   if (!url && !publicId) return '';
-  const downloadUrl = buildCloudinaryDownloadUrl(url, publicId, fileName);
-  const safeUrl = escapeSheetFormulaValue(downloadUrl);
+  const previewUrl = buildCloudinaryPreviewUrl(url, publicId, fileName);
+  const safeUrl = escapeSheetFormulaValue(previewUrl);
   const safeLabel = escapeSheetFormulaValue(label || 'Open file');
   return `=HYPERLINK("${safeUrl}","${safeLabel}")`;
 };
@@ -261,6 +257,7 @@ const submitDocuments = async (req, res) => {
       studentToken.cf_number,
       studentToken.student_name,
       studentToken.student_email,
+      studentToken.university || 'ANC',
       studentToken.program,
       studentToken.degree_description || '',
       studentToken.product_code,
