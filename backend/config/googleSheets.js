@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { buildCounsellorSheetRow, getCounsellorFieldIndexes } = require('../utils/counsellorSheet');
 
-// Named document columns for the Submissions sheet (columns 9–30, 0-indexed as 8–29)
+// Named document columns for the Submissions sheet (columns 10–31, 0-indexed as 9–30)
 const SUBMISSION_DOC_COLUMNS = [
   'Application Form',
   'Affidavit',
