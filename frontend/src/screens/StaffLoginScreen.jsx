@@ -371,7 +371,7 @@ export default function StaffLoginScreen({ navigation, route }) {
                   A password reset code was sent to {selected?.email}. Enter the code on the Reset Password screen to continue.
                 </Text> */}
                 <Text style={styles.successText}>
-                  A password reset code has been sent to your email. Enter the code on the <b>Reset Password</b> screen to continue.
+                  A password reset code has been sent to your email. Enter the code on the <Text style={{ fontWeight: '700' }}>Reset Password</Text> screen to continue.
 
                 </Text>
               </View>
