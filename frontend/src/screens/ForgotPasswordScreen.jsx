@@ -19,7 +19,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
 
   const [email, setEmail] = useState(emailParam);
   const [currentPassword, setCurrentPassword] = useState('');
-  const [resetCode, setResetCode] = useState('');
+  const [resetCode, setResetCode] = useState(route.params?.scannedToken || '');
   const [newPassword, setNewPass] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showCurrentPass, setShowCurrentPass] = useState(false);
@@ -35,6 +35,14 @@ export default function ForgotPasswordScreen({ navigation, route }) {
   React.useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
   }, []);
+
+  React.useEffect(() => {
+    if (route.params?.scannedToken) setResetCode(route.params.scannedToken);
+  }, [route.params?.scannedToken]);
+
+  const scanResetCode = () => {
+    navigation.navigate('QRScan', { mode: 'resetPassword', email, type });
+  };
 
   const handleReset = async () => {
     setError('');
@@ -145,6 +153,10 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                   autoCapitalize="none"
                   keyboardType="default"
                 />
+                <TouchableOpacity style={styles.scanBtn} onPress={scanResetCode} activeOpacity={0.8}>
+                  <Ionicons name="qr-code-outline" size={18} color={COLORS.navy} />
+                  <Text style={styles.scanBtnText}>Scan Reset QR Code</Text>
+                </TouchableOpacity>
               </>
             )}
 
@@ -319,6 +331,12 @@ const createStyles = (COLORS) =>
     },
     inputFlex: { flex: 1, fontSize: 14, color: COLORS.text, paddingVertical: 13 },
     eyeBtn: { padding: 6 },
+    scanBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+      borderWidth: 1.5, borderColor: COLORS.navy, borderRadius: 12,
+      paddingVertical: 11, marginTop: 10,
+    },
+    scanBtnText: { color: COLORS.navy, fontWeight: '700', fontSize: 14 },
 
     errorBox: {
       flexDirection: 'row', alignItems: 'flex-start', gap: 8,

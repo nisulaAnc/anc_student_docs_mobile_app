@@ -17,12 +17,23 @@ export default function QRScanScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { colors: COLORS } = useTheme();
 
+  const isPasswordReset = mode === 'resetPassword';
   const targetScreen = mode === 'counsellor' ? 'CounsellorPortal' : 'StudentPortal';
-  const title = mode === 'counsellor' ? 'Counsellor Portal' : 'Student Portal';
+  const title = isPasswordReset
+    ? 'Reset Password'
+    : mode === 'counsellor' ? 'Counsellor Portal' : 'Student Portal';
 
   const goToPortal = (token) => {
     const t = token.trim();
     if (!t) return;
+    if (isPasswordReset) {
+      navigation.navigate('ForgotPassword', {
+        email: route.params?.email || '',
+        type: route.params?.type || 'cf',
+        scannedToken: t,
+      });
+      return;
+    }
     navigation.replace(targetScreen, { token: t });
   };
 

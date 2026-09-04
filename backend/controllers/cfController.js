@@ -890,6 +890,10 @@ const forgotPassword = async (req, res) => {
         <div style="text-align:center;margin:24px 0;">
           <strong style="font-family:monospace;font-size:18px;color:#0A2463;letter-spacing:1px;display:inline-block;padding:12px 24px;background:#F8FAFC;border:2px solid #E2E8F0;border-radius:10px;">${token}</strong>
         </div>
+        <p style="text-align:center;font-size:13px;color:#64748B;">Or scan this QR code in the Reset Password screen:</p>
+        <div style="text-align:center;margin:16px 0 24px;">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(token)}" alt="Password reset QR code" width="220" height="220" style="border:8px solid #fff;box-shadow:0 2px 10px rgba(10,36,99,0.12);" />
+        </div>
         <strong>This code expires in 1 hour.</strong><br/><br/>
         If you did not request a password reset, please ignore this email.</p>`
       );
