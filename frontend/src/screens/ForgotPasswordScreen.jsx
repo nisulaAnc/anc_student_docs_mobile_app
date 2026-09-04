@@ -141,7 +141,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                   placeholder="Enter the reset code from your email"
                   placeholderTextColor={COLORS.muted}
                   value={resetCode}
-                  onChangeText={(text) => setResetCode(text.replace(/\s+/g, '').slice(0, 36))}
+                  onChangeText={(text) => setResetCode(text.replace(/\s+/g, '').slice(0, 128))}
                   autoCapitalize="none"
                   keyboardType="default"
                 />
