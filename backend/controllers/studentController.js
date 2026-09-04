@@ -68,12 +68,13 @@ const buildCloudinaryPreviewUrl = (url = '', publicId = '', fileName = '') => {
   if (publicId) {
     const ext = String(fileName).split('.').pop().toLowerCase();
     const resourceType = ['pdf', 'doc', 'docx'].includes(ext) ? 'raw' : 'image';
-    const publicIdWithoutExt = publicId.replace(/\.[^.]+$/, '');
     const options = {
       secure: true,
       resource_type: resourceType,
+      type: 'upload',
+      sign_url: true,
     };
-    return cloudinary.url(publicIdWithoutExt, options);
+    return cloudinary.url(publicId, options);
   }
 
   if (!url || !url.includes('/upload/')) return url;
