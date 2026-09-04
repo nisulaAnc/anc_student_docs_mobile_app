@@ -366,9 +366,13 @@ export default function StaffLoginScreen({ navigation, route }) {
             {/* Forgot password success */}
             {forgotSent && (
               <View style={styles.successBox}>
-                <Ionicons name="mail-open-outline" size={16} color="#16A34A" />
+                {/* <Ionicons name="mail-open-outline" size={16} color="#16A34A" /> */}
+                {/* <Text style={styles.successText}>
+                  A password reset code was sent to {selected?.email}. Enter the code on the Reset Password screen to continue.
+                </Text> */}
                 <Text style={styles.successText}>
-                  A password reset code was sent to {selected?.email}. Open the app, go to Reset Password and enter the code.
+                  A password reset code has been sent to your email. Enter the code on the <b>Reset Password</b> screen to continue.
+
                 </Text>
               </View>
             )}
