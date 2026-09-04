@@ -42,6 +42,7 @@ test('accepts a token when one is supplied', () => {
   assert.equal(result.valid, true);
   assert.equal(result.token, 'ABC123');
   assert.equal(result.requiredToken, true);
+    assert.equal(result.newPassword, 'Secure123');
 });
 
 test('keeps password reset tokens usable when the filesystem is read-only', () => {

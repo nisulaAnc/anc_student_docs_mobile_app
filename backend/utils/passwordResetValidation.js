@@ -32,6 +32,7 @@ function validateResetPasswordPayload(payload = {}) {
     valid: true,
     email: emailTrimmed,
     token: tokenTrimmed,
+      newPassword,
     requiredToken: true,
   };
 }
