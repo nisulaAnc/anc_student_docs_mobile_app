@@ -259,7 +259,7 @@ export default function StudentPortalScreen({ navigation, route }) {
               ))}
             </View>
             <Text style={styles.modalWarningNote}>
-              Please upload the missing files to complete your submission.
+              Some required files are missing. You can submit anyway and upload them later.
             </Text>
             <View style={styles.modalBtnRow}>
               <TouchableOpacity

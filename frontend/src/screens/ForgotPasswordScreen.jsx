@@ -257,7 +257,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                 onPress={() => navigation.navigate('StaffLogin', { type })}
                 activeOpacity={0.8}
               >
-                <Ionicons name="log-in-outline" size={16} color={COLORS.navy} />
+                {/* <Ionicons name="log-in-outline" size={16} color={COLORS.navy} /> */}
                 <Text style={styles.loginText}>Back to Sign In</Text>
               </TouchableOpacity>
             )}

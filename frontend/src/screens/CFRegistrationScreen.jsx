@@ -157,7 +157,7 @@ export default function CFRegistrationScreen({ navigation }) {
             {alert ? <AlertBox type={alert.type} message={alert.msg} /> : null}
 
             <Field label="CF Number" value={cfNumber} onChangeText={setCfNumber}
-              placeholder="e.g. CF2024001" autoCapitalize="characters" error={errors.cfNumber} COLORS={COLORS} />
+              placeholder="e.g. CFN-000001" autoCapitalize="characters" error={errors.cfNumber} COLORS={COLORS} />
 
             <Field label="Student Full Name" value={studentName} onChangeText={setStudentName}
               placeholder="Enter student's full name" error={errors.studentName} COLORS={COLORS} />
