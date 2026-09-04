@@ -26,7 +26,7 @@ function emailHtml(title, body, btnLabel = '', btnUrl = '') {
   <tr><td align="center">
   <table width="580" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(10,36,99,0.12);">
     <tr><td style="background:linear-gradient(135deg,#0A2463 0%,#1447B8 100%);padding:32px 48px;">
-      <div style="font-family:Georgia,serif;font-size:20px;font-weight:700;color:#fff;">ANC Student Docs</div>
+      <div style="font-family:Georgia,serif;font-size:20px;font-weight:700;color:#fff;">Student Document System</div>
       <div style="font-size:10px;color:rgba(255,255,255,0.55);letter-spacing:2px;text-transform:uppercase;margin-top:3px;">Document Portal</div>
     </td></tr>
     <tr><td style="padding:40px 48px;">
@@ -35,7 +35,7 @@ function emailHtml(title, body, btnLabel = '', btnUrl = '') {
       ${btn}
     </td></tr>
     <tr><td style="background:#F8FAFC;padding:20px 48px;border-top:1px solid #E2E8F0;text-align:center;">
-      <p style="margin:0;font-size:12px;color:#94A3B8;">© ${new Date().getFullYear()} ANC Education · Secure Document Portal</p>
+      <p style="margin:0;font-size:12px;color:#94A3B8;">© ${new Date().getFullYear()} UWL Branch Campus, operated by ANC Education · Secure Document Portal</p>
     </td></tr>
   </table>
   </td></tr></table></body></html>`;
@@ -44,12 +44,12 @@ function emailHtml(title, body, btnLabel = '', btnUrl = '') {
 function otpEmailHtml(recipientName, otp, role) {
   const roleLabel =
     role === 'counsellor' ? 'Counsellor Portal' :
-    role === 'staff' ? 'Staff Portal' : 'ANC Student Docs';
+    role === 'staff' ? 'Staff Portal' : 'Student Document System';
   return emailHtml(
     'Your One-Time Verification Code',
     `<p style="font-size:15px;color:#334155;line-height:1.7;margin-bottom:24px;">
       Dear <strong>${recipientName}</strong>,<br><br>
-      Use the code below to verify your identity and access the ANC <strong>${roleLabel}</strong>.
+      Use the code below to verify your identity and access the Document Management System as a <strong>${roleLabel}</strong>.
       This code expires in <strong>10 minutes</strong>.
     </p>
     <div style="background:#EFF6FF;border:2px dashed #BFDBFE;border-radius:16px;padding:32px;text-align:center;margin-bottom:24px;">
