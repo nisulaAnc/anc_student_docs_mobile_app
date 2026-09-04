@@ -8,7 +8,7 @@ const { resolveCounsellorPin, buildCounsellorSession, issueCounsellorToken, veri
 const { resolveCounsellorPinReset } = require('../utils/counsellorSheet');
 const { generateSecret, generateOtpAuthUri, verifyTotp, verifyEmailCode } = require('../utils/twoFactor');
 const { getTwoFactorEntry, setTwoFactorEntry } = require('../utils/twoFactorStore');
-const { setResetToken, getResetEntry, clearResetEntry } = require('../utils/passwordResetStore');
+const { createResetToken, verifyResetToken, RESET_TOKEN_TTL_MS } = require('../utils/passwordResetToken');
 const { validateResetPasswordPayload, validatePasswordChangePayload } = require('../utils/passwordResetValidation');
 
 const resolveTwoFactorVerification = (entry, otp) => {
@@ -877,8 +877,9 @@ const forgotPassword = async (req, res) => {
     // Always return success to prevent email enumeration
     if (!existing) return res.json({ success: true, message: 'If the account exists, a reset email was sent.' });
 
-    const token = String(Math.floor(10000000 + Math.random() * 90000000));
-    setResetToken(email, token, Date.now() + 1000 * 60 * 60); // 1 hour
+    const code = String(Math.floor(10000000 + Math.random() * 90000000));
+    const expiresAt = Date.now() + RESET_TOKEN_TTL_MS;
+    const token = createResetToken(email, code, expiresAt);
 
     try {
       const html = emailHtml(
@@ -887,7 +888,7 @@ const forgotPassword = async (req, res) => {
         We received a request to reset your password for your <strong>Document Management System</strong> account.<br/><br/>
         Please open the DMS app, go to <strong>Forgot Password -> Reset Password</strong> and enter the following reset code:<br/><br/>
         <div style="text-align:center;margin:24px 0;">
-          <strong style="font-family:monospace;font-size:22px;color:#0A2463;letter-spacing:4px;display:inline-block;padding:12px 24px;background:#F8FAFC;border:2px solid #E2E8F0;border-radius:10px;">${token}</strong>
+          <strong style="font-family:monospace;font-size:18px;color:#0A2463;letter-spacing:1px;display:inline-block;padding:12px 24px;background:#F8FAFC;border:2px solid #E2E8F0;border-radius:10px;">${token}</strong>
         </div>
         <strong>This code expires in 1 hour.</strong><br/><br/>
         If you did not request a password reset, please ignore this email.</p>`
@@ -914,8 +915,7 @@ const resetPassword = async (req, res) => {
 
     const { email, token, newPassword } = payload;
     if (token) {
-      const entry = getResetEntry(email);
-      if (!entry || entry.token !== token) {
+      if (!verifyResetToken(email, token)) {
         return res.status(400).json({ success: false, message: 'Invalid or expired reset token.' });
       }
     }
@@ -925,7 +925,6 @@ const resetPassword = async (req, res) => {
     if (!existing) return res.status(404).json({ success: false, message: 'Account not found.' });
 
     await upsertCounsellorRecord({ name: existing.name, email, password: newPassword, role: existing.role });
-    clearResetEntry(email);
 
     try {
       const html = emailHtml('Password Reset Confirmed', `<p>Your password has been changed successfully.</p>`);
