@@ -69,7 +69,7 @@ const selectProgram = async (req, res) => {
     `<p style="font-size:15px;color:#334155;line-height:1.7;">
       Dear <strong>${cfToken.student_name}</strong>,<br><br>
       Your counsellor has selected your programme: <strong>${programDetail.description || programDetail.label}</strong>.<br><br>
-      Please scan the QR code below using the <strong>ANC Student Docs Mobile App</strong> or click the button to verify your identity and submit your required documents.
+      Please scan the QR code below using the <strong>DMS Mobile App</strong> or click the button to verify your identity and submit your required documents.
     </p>
     <div style="text-align:center;margin:24px 0;">
       <img src="${qrUrl}" alt="QR Code" width="180" height="180" style="border:4px solid #fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.1);" />
@@ -85,7 +85,7 @@ const selectProgram = async (req, res) => {
   try {
     await sendEmail(
       getNotificationRecipients(cfToken.student_email, cfToken.university),
-      'ANC Student Docs – Submit Your Documents',
+      'Document Management System – Submit Your Documents',
       html
     );
   } catch (err) {

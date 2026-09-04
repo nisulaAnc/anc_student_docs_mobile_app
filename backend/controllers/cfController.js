@@ -1,4 +1,3 @@
-const { v4: uuidv4 } = require('uuid');
 const CfToken = require('../models/CfToken');
 const StudentToken = require('../models/StudentToken');
 const Submission = require('../models/Submission');
@@ -96,7 +95,7 @@ const registerCF = async (req, res) => {
       <strong>Student Email:</strong> ${student_email}<br>
       <strong>CF Number:</strong> ${cf_number}<br>
       <strong>University:</strong> ${normalizedUniversity}<br><br>
-      Please scan the QR code below using the <strong>ANC Student Docs Mobile App</strong> or click the button to verify and select the student's programme.
+      Please scan the QR code below using the <strong>DMS Mobile App</strong> or click the button to verify and select the student's programme.
     </p>
     <div style="text-align:center;margin:24px 0;">
       <img src="${qrUrl}" alt="QR Code" width="180" height="180" style="border:4px solid #fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.1);" />
@@ -110,7 +109,7 @@ const registerCF = async (req, res) => {
   );
 
   try {
-    await sendEmail(getNotificationRecipients(counsellor.email, normalizedUniversity), 'ANC Student Docs – Action Required', html);
+    await sendEmail(getNotificationRecipients(counsellor.email, normalizedUniversity), 'Document Management System – Action Required', html);
   } catch (err) {
     console.error('Email send error:', err.message);
   }
@@ -309,7 +308,7 @@ const sendTwoFactorEmailCode = async (req, res) => {
             <h1>Two-Factor Authentication</h1>
           </div>
           <p style="font-size:16px;color:#333;">Hello <strong>${name || existing.name || 'User'}</strong>,</p>
-          <p class="info">You have requested to enable Two-Factor Authentication for your ANC Student Docs account.</p>
+          <p class="info">You have requested to enable Two-Factor Authentication for your Document Management System account.</p>
           <p class="info">Please use the following 6-digit verification code to complete the setup:</p>
           <div class="code-box">
             <div class="code">${code}</div>
@@ -317,7 +316,7 @@ const sendTwoFactorEmailCode = async (req, res) => {
           <p style="font-size:14px;color:#666;">This code will expire in <strong>10 minutes</strong>.</p>
           <p style="font-size:14px;color:#666;">If you did not request this code, please ignore this email.</p>
           <div class="footer">
-            <p>ANC Student Docs · Secure Document Portal</p>
+            <p>Document Management System • Secure Document Portal</p>
           </div>
         </div>
       </body>
@@ -327,7 +326,7 @@ const sendTwoFactorEmailCode = async (req, res) => {
     // Send OTP email
     await sendEmail(
       normalizedEmail,
-      'ANC Student Docs – Your 2FA Verification Code',
+      'Document Management System - Your 2FA Verification Code',
       html
     );
 
@@ -432,7 +431,7 @@ const enableTwoFactor = async (req, res) => {
 
     // Send email notification about 2FA state change
     try {
-      const subject = shouldEnable ? 'ANC Student Docs - 2FA Enabled' : 'ANC Student Docs - 2FA Disabled';
+      const subject = shouldEnable ? 'Document Management System - 2FA Enabled' : 'Document Management System - 2FA Disabled';
       const actionText = shouldEnable ? 'enabled' : 'disabled';
       const html = emailHtml(
         'Security Notice',
@@ -627,13 +626,13 @@ const sendReminderEmail = async (req, res) => {
           <strong style="font-family:monospace;font-size:16px;color:#0A2463;letter-spacing:2px;display:inline-block;margin-top:6px;padding:8px 16px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">${token}</strong>
         </div>
       </div>`,
-      'Upload Missing Documents →',
+      'Upload Missing Documents',
       studentUrl
     );
 
     await sendEmail(
       getNotificationRecipients(studentToken.student_email, studentToken.university),
-      'ANC Student Docs – Reminder: Pending Documents',
+      'Document Management System - Reminder: Pending Documents',
       html
     );
 
@@ -692,13 +691,13 @@ const registerStaff = async (req, res) => {
         'Your Account is Verified',
         `<p style="font-size:15px;color:#334155;line-height:1.8;">Dear <strong>${existing.name}</strong>,<br/><br/>
         Your account has been successfully created and <strong style="color:#16A34A;">verified</strong>.
-        You can now log in to the <strong>ANC Student Docs</strong> mobile app using your registered credentials.<br/><br/>
+        You can now log in to the <strong>DMS</strong> mobile app using your registered credentials.<br/><br/>
         <strong>Name:</strong> ${existing.name}<br/>
         <strong>Email:</strong> ${email}<br/>
         <strong>Role:</strong> ${finalRole}<br/><br/>
         If you did not create this account, please contact the administrator immediately.</p>`
       );
-      await sendEmail(email, 'ANC Student Docs - Your Account is Verified', html);
+      await sendEmail(email, 'Document Management System - Your Account is Verified', html);
     } catch (e) {
       console.error('Email send error (registerStaff):', e.message);
     }
@@ -712,7 +711,7 @@ const registerStaff = async (req, res) => {
     });
     return res.json({
       success: true,
-      message: 'Your account has been verified. Welcome to ANC Student Docs!',
+      message: 'Your account has been verified. Welcome to Document Management System!',
       token,
       email,
       role: finalRole,
@@ -776,7 +775,7 @@ const loginStaff = async (req, res) => {
               emailSentAt: new Date(),
             });
             const html = otpEmailHtml(existing.name || email, code, 'staff');
-            await sendEmail(email, 'ANC Student Docs – Your Login Verification Code', html);
+            await sendEmail(email, 'Document Management System – Your Login Verification Code', html);
           } catch (emailErr) {
             console.error('Login OTP email error:', emailErr.message);
             // Don't block login attempt — client can resend
@@ -857,7 +856,7 @@ const sendLoginOtp = async (req, res) => {
     });
 
     const html = otpEmailHtml(existing.name || normalizedEmail, code, 'staff');
-    await sendEmail(normalizedEmail, 'ANC Student Docs – Your Login Verification Code', html);
+    await sendEmail(normalizedEmail, 'Document Management System – Your Login Verification Code', html);
 
     return res.json({ success: true, message: 'A new 6-digit code has been sent to your email.' });
   } catch (err) {
@@ -878,22 +877,22 @@ const forgotPassword = async (req, res) => {
     // Always return success to prevent email enumeration
     if (!existing) return res.json({ success: true, message: 'If the account exists, a reset email was sent.' });
 
-    const token = uuidv4();
+    const token = String(Math.floor(10000000 + Math.random() * 90000000));
     setResetToken(email, token, Date.now() + 1000 * 60 * 60); // 1 hour
 
     try {
       const html = emailHtml(
         'Password Reset Request',
         `<p style="font-size:15px;color:#334155;line-height:1.8;">Dear <strong>${existing.name}</strong>,<br/><br/>
-        We received a request to reset your password for your <strong>ANC Student Docs</strong> account.<br/><br/>
-        Please open the ANC Student Docs app, go to <strong>Forgot Password -> Reset Password</strong>, and enter the following reset code:<br/><br/>
+        We received a request to reset your password for your <strong>Document Management System</strong> account.<br/><br/>
+        Please open the DMS app, go to <strong>Forgot Password -> Reset Password</strong> and enter the following reset code:<br/><br/>
         <div style="text-align:center;margin:24px 0;">
           <strong style="font-family:monospace;font-size:22px;color:#0A2463;letter-spacing:4px;display:inline-block;padding:12px 24px;background:#F8FAFC;border:2px solid #E2E8F0;border-radius:10px;">${token}</strong>
         </div>
         <strong>This code expires in 1 hour.</strong><br/><br/>
         If you did not request a password reset, please ignore this email.</p>`
       );
-      await sendEmail(email, 'ANC Student Docs - Password Reset Code', html);
+      await sendEmail(email, 'Document Management System - Password Reset Code', html);
     } catch (e) {
       console.error('Email send error (forgotPassword):', e.message);
     }
@@ -930,7 +929,7 @@ const resetPassword = async (req, res) => {
 
     try {
       const html = emailHtml('Password Reset Confirmed', `<p>Your password has been changed successfully.</p>`);
-      await sendEmail(email, 'ANC Student Docs - Password Changed', html);
+      await sendEmail(email, 'Document Management System - Password Changed', html);
     } catch (e) {
       console.error('Email send error (resetPassword):', e.message);
     }
@@ -968,7 +967,7 @@ const changePassword = async (req, res) => {
 
     try {
       const html = emailHtml('Password Changed', `<p>Your password was updated successfully.</p>`);
-      await sendEmail(email, 'ANC Student Docs - Password Changed', html);
+      await sendEmail(email, 'Document Management System - Password Changed', html);
     } catch (e) {
       console.error('Email send error (changePassword):', e.message);
     }

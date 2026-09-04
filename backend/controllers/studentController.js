@@ -316,7 +316,7 @@ const submitDocuments = async (req, res) => {
     try {
       await sendEmail(
         getNotificationRecipients(studentToken.student_email, studentToken.university),
-        'ANC Student Docs – Incomplete Submission: Action Required',
+        'Document Management System – Incomplete Submission: Action Required',
         incompleteStudentHtml
       );
     } catch (err) {
@@ -348,7 +348,7 @@ const submitDocuments = async (req, res) => {
         );
         await sendEmail(
           getNotificationRecipients(counsellor.email, studentToken.university),
-          `ANC Student Docs – INCOMPLETE Submission: ${studentToken.student_name}`,
+          `Document Management System – INCOMPLETE Submission: ${studentToken.student_name}`,
           counsellorAlertHtml
         );
       }
@@ -379,7 +379,7 @@ const submitDocuments = async (req, res) => {
   try {
     await sendEmail(
       getNotificationRecipients(studentToken.student_email, studentToken.university),
-      'ANC Student Docs – Submission Confirmed',
+      'Document Management System – Submission Confirmed',
       studentHtml
     );
   } catch (err) {
@@ -411,7 +411,7 @@ const submitDocuments = async (req, res) => {
       );
       await sendEmail(
         getNotificationRecipients(counsellor.email, studentToken.university),
-        `ANC Student Docs – ${studentToken.student_name} Submitted Documents`,
+        `Document Management System – ${studentToken.student_name} Submitted Documents`,
         counsellorHtml
       );
     } else {
@@ -428,9 +428,9 @@ const submitDocuments = async (req, res) => {
       const uploadedDocList = uploadedDocs.map((d) => `<li>${d.label}</li>`).join('');
       const hasAgreement = !!agreementCloudinaryUrl;
       const adminHtml = emailHtml(
-        'New Student Submission',
+        'New Document Submission',
         `<p style="font-size:15px;color:#334155;line-height:1.7;">
-          A student has just submitted their documents via the ANC Student Docs portal.<br><br>
+          A student has just submitted their documents via the Document Management System (DMS).<br><br>
           <strong>Student Name:</strong> ${studentToken.student_name}<br>
           <strong>Student Email:</strong> ${studentToken.student_email}<br>
           <strong>CF Number:</strong> ${studentToken.cf_number}<br>
@@ -438,13 +438,23 @@ const submitDocuments = async (req, res) => {
           <strong>Counsellor:</strong> ${studentToken.counsellor_name}<br>
           <strong>Submitted At:</strong> ${new Date().toLocaleString()}
         </p>
-        <p style="font-size:14px;font-weight:700;color:#0A2463;margin:20px 0 8px;">Documents Submitted:</p>
-        <ul style="color:#334155;font-size:14px;line-height:2;">${uploadedDocList}${hasAgreement ? '<li>Agreement (signed)</li>' : ''}</ul>
-        <p style="font-size:13px;color:#64748B;margin-top:20px;">Please log in to the admin panel to review the submitted files.</p>`
+
+        <p style="font-size:14px;font-weight:700;color:#0A2463;margin:20px 0 8px;">
+          Documents Submitted:
+        </p>
+
+        <ul style="color:#334155;font-size:14px;line-height:2;">
+          ${uploadedDocList}
+          ${hasAgreement ? '<li>Agreement (Signed)</li>' : ''}
+        </ul>
+
+        <p style="font-size:13px;color:#64748B;margin-top:20px;">
+          Please log in to the admin panel to review the submitted documents.
+        </p>`
       );
       await sendEmail(
         getNotificationRecipients(adminEmail, studentToken.university),
-        `ANC Student Docs – New Submission: ${studentToken.student_name} (${studentToken.cf_number})`,
+        `Document Management System – New Submission: ${studentToken.student_name} (${studentToken.cf_number})`,
         adminHtml
       );
     }
