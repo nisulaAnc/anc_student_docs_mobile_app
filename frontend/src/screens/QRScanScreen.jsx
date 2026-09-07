@@ -13,6 +13,7 @@ export default function QRScanScreen({ navigation, route }) {
   const { mode } = route.params;
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
   const [manualToken, setManualToken] = useState('');
   const [showManual, setShowManual] = useState(false);
   const [cameraError, setCameraError] = useState('');
@@ -85,8 +86,11 @@ export default function QRScanScreen({ navigation, route }) {
           facing="back"
           onBarcodeScanned={scanned ? undefined : handleScan}
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          onCameraReady={() => setCameraError('')}
-          onMountError={({ nativeEvent }) => setCameraError(nativeEvent?.message || 'Unable to start the camera.')}
+          onCameraReady={() => { setIsCameraReady(true); setCameraError(''); }}
+          onMountError={({ nativeEvent }) => {
+            setIsCameraReady(false);
+            setCameraError(nativeEvent?.message || 'Unable to start the camera.');
+          }}
         />
       )}
 
