@@ -78,16 +78,17 @@ export default function QRScanScreen({ navigation, route }) {
 
   return (
     <View style={{ flex: 1 }}>
-      <CameraView
-        key={cameraKey}
-        style={StyleSheet.absoluteFillObject}
-        active={isFocused}
-        facing="back"
-        onBarcodeScanned={scanned ? undefined : handleScan}
-        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        onCameraReady={() => setCameraError('')}
-        onMountError={({ message }) => setCameraError(message || 'Unable to start the camera.')}
-      />
+      {isFocused && (
+        <CameraView
+          key={cameraKey}
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+          onBarcodeScanned={scanned ? undefined : handleScan}
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          onCameraReady={() => setCameraError('')}
+          onMountError={({ nativeEvent }) => setCameraError(nativeEvent?.message || 'Unable to start the camera.')}
+        />
+      )}
 
       <View style={[styles.overlay, { paddingTop: insets.top }]}>
         {/* Top */}
