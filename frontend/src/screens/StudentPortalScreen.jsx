@@ -191,7 +191,7 @@ export default function StudentPortalScreen({ navigation, route }) {
         const details = oversizedFiles.map((f) => `${f.name} (${formatFileSize(f.size)})`).join('\n');
         Alert.alert(
           'File Too Large',
-          `The following files exceed the 5 MB limit:\n\n${details}\n\nPlease choose smaller files or compress them before submitting.`
+          `The following files exceed the 4 MB limit:\n\n${details}\n\nPlease choose smaller files or compress them before submitting.`
         );
         return;
       }
@@ -322,7 +322,7 @@ export default function StudentPortalScreen({ navigation, route }) {
                 title={`${university} Student Registration`}
                 subtitle={isReturningStudent
                   ? `Welcome back! Some documents are still needed.`
-                  : 'Identity verified ✓ — Upload your documents below.'
+                  : 'Upload your documents below.'
                 }
               />
               <View style={styles.body}>
@@ -428,7 +428,7 @@ export default function StudentPortalScreen({ navigation, route }) {
                 <View style={styles.infoBanner}>
                   <Ionicons name="information-circle" size={16} color={COLORS.blue} />
                   <Text style={styles.infoBannerTxt}>
-                    Max 5MB per file. Formats: <Text style={{ fontWeight: '700' }}>PDF</Text> for documents,{' '}
+                    Max 4MB per file. Formats: <Text style={{ fontWeight: '700' }}>PDF</Text> for documents,{' '}
                     <Text style={{ fontWeight: '700' }}>JPG/PNG</Text> for photos and IDs. Large PDFs are automatically compressed.
                   </Text>
                 </View>

@@ -66,41 +66,42 @@ export const getStudentTokenInfo = (token) =>
   api.get('/student/token-info', { params: { token } });
 
 export const submitDocuments = (token, files, docLabels, agreementFile = null) => {
-  const formData = new FormData();
-  formData.append('token', token);
-  formData.append('doc_labels', JSON.stringify(docLabels));
+  const requests = [];
+  const appendFile = (formData, fieldName, file, fallbackName) => {
+    const ext = (file.uri || '').split('.').pop().toLowerCase() || 'pdf';
+    const mimeType = ext === 'pdf' ? 'application/pdf'
+      : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+        : ext === 'png' ? 'image/png' : 'application/octet-stream';
+    formData.append(fieldName, {
+      uri: file.uri,
+      name: file.name || fallbackName,
+      type: mimeType,
+    });
+  };
+
+  const queueRequest = (fieldName, file, index) => {
+    const formData = new FormData();
+    formData.append('token', token);
+    formData.append('doc_labels', JSON.stringify(docLabels));
+    appendFile(formData, fieldName, file, `${fieldName}.pdf`);
+    requests.push(() => api.post('/student/submit-documents', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    }));
+  };
 
   files.forEach((fileOrFiles, index) => {
     if (!fileOrFiles) return;
     const fileArray = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
-
-    fileArray.forEach((file) => {
-      const ext = (file.uri || '').split('.').pop().toLowerCase() || 'pdf';
-      const mimeType = ext === 'pdf' ? 'application/pdf'
-        : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
-          : ext === 'png' ? 'image/png' : 'application/octet-stream';
-
-      formData.append(`doc_${index}`, {
-        uri: file.uri,
-        name: file.name || `doc_${index}.${ext}`,
-        type: mimeType,
-      });
-    });
+    fileArray.forEach((file) => queueRequest(`doc_${index}`, file, index));
   });
 
-  if (agreementFile) {
-    const ext = (agreementFile.uri || '').split('.').pop().toLowerCase() || 'pdf';
-    formData.append('agreement', {
-      uri: agreementFile.uri,
-      name: agreementFile.name || `agreement.${ext}`,
-      type: 'application/pdf',
-    });
-  }
+  if (agreementFile) queueRequest('agreement', agreementFile, 'agreement');
 
-  return api.post('/student/submit-documents', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000,
-  });
+  return requests.reduce(
+    (previous, request) => previous.then(() => request()),
+    Promise.resolve(null)
+  ).then((response) => response || { data: { success: true } });
 };
 
 export default api;

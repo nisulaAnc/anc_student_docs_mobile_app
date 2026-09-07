@@ -6,7 +6,8 @@ import { Platform } from 'react-native';
 // export const API_BASE_URL = `http://${LOCAL_IP}:${PORT}/api`;
 
 // (limits.fileSize) so the client-side check and the server-side rejection agree.
-export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+// Vercel serverless requests are limited to roughly 4.5MB, including multipart overhead.
+export const MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024; // 4MB
 
 // export const API_BASE_URL = 'https://ancmoodle.com/dms/backend/api';
 

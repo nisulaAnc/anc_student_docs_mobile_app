@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Alert,
+  View, Text, TouchableOpacity, StyleSheet, Alert, Platform,
   Modal, FlatList, Image, ActivityIndicator, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,12 +9,14 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as IntentLauncher from 'expo-intent-launcher';
 import * as Print from 'expo-print';
+import { encode as encodeBase64 } from 'base-64';
 import { useTheme } from '../context/ThemeContext';
 import { MAX_FILE_SIZE_BYTES } from '../constants/config';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const MAX_FILE_SIZE = MAX_FILE_SIZE_BYTES; // 5MB (centralized in constants/config.jsx)
+const MAX_FILE_SIZE = MAX_FILE_SIZE_BYTES; // 4MB (centralized in constants/config.jsx)
 
 // Tries multiple compression levels until the PDF is under MAX_FILE_SIZE.
 // Each level recompresses the original scanned images with lower JPEG quality
@@ -43,6 +45,33 @@ const checkFileSize = async (uri) => {
   } catch (err) {
     console.error('Error getting file size:', err);
     return null;
+  }
+};
+
+const persistFile = async (uri, fileName) => {
+  const destination = `${FileSystem.documentDirectory}${fileName}`;
+  await FileSystem.copyAsync({ from: uri, to: destination });
+  return destination;
+};
+
+const persistPrintedPdf = async (uri, fileName) => {
+  const destination = `${FileSystem.documentDirectory}${fileName}`;
+  try {
+    return await persistFile(uri, fileName);
+  } catch (copyError) {
+    // Expo Go can return a Print URI that copyAsync cannot read on Android.
+    // Fetching the local URI still works, then stores the PDF persistently.
+    const response = await fetch(uri);
+    if (!response.ok) throw copyError;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    await FileSystem.writeAsStringAsync(destination, encodeBase64(binary), {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    return destination;
   }
 };
 
@@ -152,8 +181,12 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
         }
 
         const ext = finalUri.split('.').pop().toLowerCase() || 'jpg';
+        const persistedUri = await persistFile(
+          finalUri,
+          `upload_${index}_${Date.now()}.${ext}`
+        );
         const newFile = {
-          uri: finalUri,
+          uri: persistedUri,
           name: `photo_${index}_${Date.now()}.${ext}`,
           mimeType: `image/${ext === 'png' ? 'png' : 'jpeg'}`
         };
@@ -266,7 +299,10 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
         `;
 
         const result = await Print.printToFileAsync({ html });
-        pdfUri = result.uri;
+        pdfUri = await persistPrintedPdf(
+          result.uri,
+          `scan_${index}_${Date.now()}_${li}.pdf`
+        );
         pdfFileSize = await checkFileSize(pdfUri);
 
         if (!pdfFileSize || pdfFileSize <= MAX_FILE_SIZE) {
@@ -286,7 +322,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       if (!pdfUri || (pdfFileSize && pdfFileSize > MAX_FILE_SIZE)) {
         Alert.alert(
           'File Too Large',
-          `Even after compression, this scan is too large to fit under the 5 MB limit. Please scan fewer pages, or scan each page separately.`
+          `Even after compression, this scan is too large to fit under the 4 MB limit. Please scan fewer pages, or scan each page separately.`
         );
         setConverting(false);
         return;
@@ -363,8 +399,8 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
 
         if (stillOversizedFiles.length > 0) {
           const msg = stillOversizedFiles.length === 1
-            ? `${stillOversizedFiles[0]} exceeds the 5 MB limit. Please choose a smaller file or use the Scan option instead.`
-            : `${stillOversizedFiles.length} files exceed the 5 MB limit:\n\n${stillOversizedFiles.join('\n')}\n\nPlease choose smaller files or use the Scan option instead.`;
+            ? `${stillOversizedFiles[0]} exceeds the 4 MB limit. Please choose a smaller file or use the Scan option instead.`
+            : `${stillOversizedFiles.length} files exceed the 4 MB limit:\n\n${stillOversizedFiles.join('\n')}\n\nPlease choose smaller files or use the Scan option instead.`;
           Alert.alert('File Too Large', msg);
         }
 
@@ -398,19 +434,54 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
         fileToPreview.mimeType?.startsWith('image/') ||
         /\.(jpe?g|png)$/i.test(fileToPreview.name || fileToPreview.uri || '');
 
-      if (isPdf || isImage) {
+      if (!isPdf && !isImage) {
+        Alert.alert('Preview Unavailable', 'Preview is available for PDF and JPG/PNG files only.');
+        return;
+      }
+
+      const mimeType = isPdf ? 'application/pdf' : (fileToPreview.mimeType || 'image/jpeg');
+      const uri = fileToPreview.uri;
+
+      if (Platform.OS === 'android') {
+        // On Android, content:// URIs from the document picker already carry
+        // the correct read permissions. IntentLauncher passes them directly
+        // to a native viewer without any sandbox restriction.
+        if (uri.startsWith('content://')) {
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: uri,
+            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+            type: mimeType,
+          });
+        } else {
+          const info = await FileSystem.getInfoAsync(uri);
+          if (!info.exists) {
+            throw new Error('The selected file is no longer available. Please select it again.');
+          }
+          const contentUri = await FileSystem.getContentUriAsync(uri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1,
+            type: mimeType,
+          });
+        }
+      } else {
+        // iOS — copy to cache then share (iOS Sharing works fine with local file:// URIs)
         const available = await Sharing.isAvailableAsync();
         if (!available) {
           Alert.alert('Preview Unavailable', 'No compatible viewer was found on this device.');
           return;
         }
-
-        await Sharing.shareAsync(fileToPreview.uri, {
-          mimeType: isPdf ? 'application/pdf' : (fileToPreview.mimeType || 'image/*'),
-          dialogTitle: isPdf ? 'Open PDF' : 'Open Image',
+        const ext = isPdf ? 'pdf' : 'jpg';
+        const fileName = fileToPreview.name || `preview_${Date.now()}.${ext}`;
+        const info = await FileSystem.getInfoAsync(uri);
+        if (!info.exists) {
+          throw new Error('The selected file is no longer available. Please select it again.');
+        }
+        const destUri = await persistFile(uri, fileName);
+        await Sharing.shareAsync(destUri, {
+          mimeType,
+          UTI: isPdf ? 'com.adobe.pdf' : 'public.image',
         });
-      } else {
-        Alert.alert('Preview Unavailable', 'Preview is available for PDF and JPG/PNG image files only.');
       }
     } catch (err) {
       console.error('Error previewing file:', err);
@@ -419,6 +490,7 @@ export default function UploadBox({ index, label, file, onFile, onRemove, allowe
       setPreviewLoading(false);
     }
   };
+
 
   const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
 
