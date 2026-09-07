@@ -61,10 +61,17 @@ function otpEmailHtml(recipientName, otp, role) {
 }
 
 async function sendEmail(to, subject, htmlBody) {
+  const recipients = [...new Set((Array.isArray(to) ? to : [to])
+    .map((recipient) => String(recipient || '').trim().toLowerCase())
+    .filter(Boolean))];
+  if (recipients.length === 0 || recipients.length > 2 || recipients.some((recipient) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient))) {
+    throw new Error('Email recipients are invalid or exceed the allowed limit.');
+  }
+
   const transporter = createTransporter();
   await transporter.sendMail({
     from: `"${process.env.FROM_NAME}" <${process.env.FROM_EMAIL}>`,
-    to,
+    to: recipients,
     subject,
     html: htmlBody,
   });
