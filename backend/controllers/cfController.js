@@ -83,8 +83,9 @@ const registerCF = async (req, res) => {
   }
 
   // Email counsellor
-  const portalUrl = `${process.env.BASE_URL || 'http://localhost:5000'}/counsellor?token=${token}`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(portalUrl)}`;
+  const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+  const portalUrl = `${baseUrl}/counsellor?token=${token}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(token)}`;
 
   const html = emailHtml(
     'New Student Registration',
@@ -599,9 +600,9 @@ const sendReminderEmail = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Student has already submitted all required documents.' });
     }
 
-    const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
-    const studentUrl = `${BASE_URL}/student?token=${token}`;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(studentUrl)}`;
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const studentUrl = `${baseUrl}/student?token=${token}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(token)}`;
 
     const missingList = missingDocs.map((d) => `<li>${d}</li>`).join('');
     const uploadedList = uploadedDocs.map((d) => `<li>${d}</li>`).join('');

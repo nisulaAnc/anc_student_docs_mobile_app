@@ -60,9 +60,9 @@ const selectProgram = async (req, res) => {
   }
 
   // Email student
-  const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
-  const studentUrl = `${BASE_URL}/student?token=${studentToken}`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(studentUrl)}`;
+  const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+  const studentUrl = `${baseUrl}/student?token=${studentToken}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(studentToken)}`;
 
   const html = emailHtml(
     'Complete Your Student Registration',

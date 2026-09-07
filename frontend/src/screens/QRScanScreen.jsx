@@ -40,12 +40,12 @@ export default function QRScanScreen({ navigation, route }) {
   const handleScan = ({ data }) => {
     if (scanned) return;
     setScanned(true);
-    let token = data;
+    let token = String(data || '').trim();
     try {
-      const url = new URL(data);
-      token = url.searchParams.get('token') || data;
+      const url = new URL(token);
+      token = url.searchParams.get('token') || token;
     } catch (_) { }
-    goToPortal(token);
+    goToPortal(token.trim());
   };
 
   if (!permission) return <View style={{ flex: 1, backgroundColor: '#000' }} />;
