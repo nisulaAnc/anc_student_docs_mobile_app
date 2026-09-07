@@ -52,6 +52,7 @@ function emailHtml(title, body, btnLabel = '', btnUrl = '') {
 
 function htmlToText(html) {
   return String(html || '')
+    .replace(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi, '$2 ($1)')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>|<\/div>|<\/tr>|<\/h[1-6]>/gi, '\n')
     .replace(/<[^>]+>/g, '')
@@ -101,6 +102,10 @@ async function sendEmail(to, subject, htmlBody, textBody = htmlToText(htmlBody))
   const transporter = createTransporter();
   await transporter.sendMail({
     from: `"${process.env.FROM_NAME || 'Document Management System'}" <${fromEmail}>`,
+    envelope: {
+      from: fromEmail,
+      to: recipients,
+    },
     replyTo: process.env.REPLY_TO_EMAIL || fromEmail,
     to: recipients,
     subject,

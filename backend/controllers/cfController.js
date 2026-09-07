@@ -633,7 +633,7 @@ const sendReminderEmail = async (req, res) => {
 
     await sendEmail(
       getNotificationRecipients(studentToken.student_email, studentToken.university),
-      'Document Management System - Reminder: Pending Documents',
+      'Your Student Document Portal: Documents Still Needed',
       html
     );
 
