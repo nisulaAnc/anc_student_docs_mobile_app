@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 function createTransporter() {
   const host = process.env.SMTP_HOST;
@@ -101,7 +102,13 @@ async function sendEmail(to, subject, htmlBody, textBody = htmlToText(htmlBody))
     throw new Error('Email sender is not configured. Set FROM_EMAIL or EMAIL_FROM.');
   }
 
+  const smtpUsername = process.env.SMTP_USERNAME || process.env.SMTP_USER;
+  if (!smtpUsername || fromEmail.toLowerCase() !== smtpUsername.toLowerCase()) {
+    throw new Error('FROM_EMAIL must match the authenticated SMTP username to preserve sender authentication.');
+  }
+
   const transporter = createTransporter();
+  const senderDomain = fromEmail.split('@')[1];
   await transporter.sendMail({
     from: `"${process.env.FROM_NAME || 'Document Management System'}" <${fromEmail}>`,
     envelope: {
@@ -113,6 +120,7 @@ async function sendEmail(to, subject, htmlBody, textBody = htmlToText(htmlBody))
     subject,
     html: htmlBody,
     text: textBody,
+    messageId: `<${crypto.randomUUID()}@${senderDomain}>`,
     headers: {
       'X-Auto-Response-Suppress': 'All',
     },
