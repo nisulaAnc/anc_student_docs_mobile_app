@@ -205,6 +205,20 @@ For Vercel deployments, add these variables in the project settings for the
 same environment as the deployment. The local `backend/.env` file is not
 available to Vercel.
 
+### Gmail Delivery
+
+Gmail decides whether a message reaches the Inbox using sender authentication
+and sender reputation; application code cannot force this classification. For
+Gmail SMTP, use a Google app password and keep `SMTP_USERNAME` and
+`FROM_EMAIL` set to the same mailbox. Do not use the normal Google account
+password.
+
+For a custom sending domain, configure SPF, DKIM, and DMARC with the mail
+provider before sending production notifications. After deployment, send a
+test message, select **Report not spam** for any incorrectly classified message,
+and add the sender to the recipient's contacts. Avoid repeatedly resending the
+same reminder, since that can worsen sender reputation.
+
 ### Frontend Configuration
 
 The frontend uses a local API base URL in `frontend/src/constants/config.jsx`:
