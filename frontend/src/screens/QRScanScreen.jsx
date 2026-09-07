@@ -4,6 +4,7 @@ import {
   TextInput, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
@@ -14,8 +15,11 @@ export default function QRScanScreen({ navigation, route }) {
   const [scanned, setScanned] = useState(false);
   const [manualToken, setManualToken] = useState('');
   const [showManual, setShowManual] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [cameraKey, setCameraKey] = useState(0);
   const insets = useSafeAreaInsets();
   const { colors: COLORS } = useTheme();
+  const isFocused = useIsFocused();
 
   const isPasswordReset = mode === 'resetPassword';
   const targetScreen = mode === 'counsellor' ? 'CounsellorPortal' : 'StudentPortal';
@@ -75,9 +79,14 @@ export default function QRScanScreen({ navigation, route }) {
   return (
     <View style={{ flex: 1 }}>
       <CameraView
+        key={cameraKey}
         style={StyleSheet.absoluteFillObject}
+        active={isFocused}
+        facing="back"
         onBarcodeScanned={scanned ? undefined : handleScan}
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+        onCameraReady={() => setCameraError('')}
+        onMountError={({ message }) => setCameraError(message || 'Unable to start the camera.')}
       />
 
       <View style={[styles.overlay, { paddingTop: insets.top }]}>
@@ -99,6 +108,17 @@ export default function QRScanScreen({ navigation, route }) {
             <View style={[styles.corner, { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0, borderBottomRightRadius: 8 }]} />
           </View>
           <Text style={styles.hint}>Point camera at QR code</Text>
+          {!!cameraError && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{cameraError}</Text>
+              <TouchableOpacity onPress={() => {
+                setCameraError('');
+                setCameraKey(key => key + 1);
+              }}>
+                <Text style={styles.retryText}>Try again</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Bottom */}
@@ -186,6 +206,9 @@ const styles = StyleSheet.create({
   frame: { width: 250, height: 250 },
   corner: { position: 'absolute', width: C, height: C, borderColor: '#fff', borderWidth: 3.5 },
   hint: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 20 },
+  errorBox: { alignItems: 'center', marginTop: 16, paddingHorizontal: 18 },
+  errorText: { color: '#fff', fontSize: 13, textAlign: 'center' },
+  retryText: { color: '#fff', fontSize: 14, fontWeight: '700', marginTop: 8 },
   bottom: { backgroundColor: 'rgba(0,0,0,0.55)', padding: 20, alignItems: 'center', gap: 10 },
   rescan: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10 },
   rescanTxt: { color: '#fff', fontWeight: '600' },
