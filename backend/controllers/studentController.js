@@ -67,7 +67,10 @@ const escapeSheetFormulaValue = (value = '') => String(value).replace(/"/g, '""'
 const buildCloudinaryPreviewUrl = (url = '', publicId = '', fileName = '') => {
   // Files are uploaded with access_mode:'public', so the stored secure_url
   // is always directly accessible — no signing needed (signed URLs expire).
-  if (url) return url;
+  if (url) {
+    // Remove an attachment delivery flag so browsers can preview PDFs.
+    return url.replace('/upload/fl_attachment/', '/upload/');
+  }
 
   // Fallback: build URL from publicId if no url stored
   if (publicId) {
@@ -82,8 +85,7 @@ const buildCloudinaryPreviewUrl = (url = '', publicId = '', fileName = '') => {
     return cloudinary.url(publicId, options);
   }
 
-  if (!url || !url.includes('/upload/')) return url;
-  return url.replace('/upload/fl_attachment/', '/upload/');
+  return url;
 };
 
 const buildSheetHyperlink = (url, label, publicId, fileName) => {
@@ -484,4 +486,9 @@ const getSubmission = async (req, res) => {
   res.json({ success: true, data: submission });
 };
 
-module.exports = { getStudentTokenInfo, submitDocuments, getSubmission };
+module.exports = {
+  getStudentTokenInfo,
+  submitDocuments,
+  getSubmission,
+  buildCloudinaryPreviewUrl,
+};
