@@ -50,6 +50,22 @@ function emailHtml(title, body, btnLabel = '', btnUrl = '') {
   </td></tr></table></body></html>`;
 }
 
+function htmlToText(html) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>|<\/div>|<\/tr>|<\/h[1-6]>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function otpEmailHtml(recipientName, otp, role) {
   const roleLabel =
     role === 'counsellor' ? 'Counsellor Portal' :
@@ -69,7 +85,7 @@ function otpEmailHtml(recipientName, otp, role) {
   );
 }
 
-async function sendEmail(to, subject, htmlBody) {
+async function sendEmail(to, subject, htmlBody, textBody = htmlToText(htmlBody)) {
   const recipients = [...new Set((Array.isArray(to) ? to : [to])
     .map((recipient) => String(recipient || '').trim().toLowerCase())
     .filter(Boolean))];
@@ -85,9 +101,14 @@ async function sendEmail(to, subject, htmlBody) {
   const transporter = createTransporter();
   await transporter.sendMail({
     from: `"${process.env.FROM_NAME || 'Document Management System'}" <${fromEmail}>`,
+    replyTo: process.env.REPLY_TO_EMAIL || fromEmail,
     to: recipients,
     subject,
     html: htmlBody,
+    text: textBody,
+    headers: {
+      'X-Auto-Response-Suppress': 'All',
+    },
   });
 }
 
