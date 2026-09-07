@@ -195,10 +195,15 @@ GOOGLE_DRIVE_FOLDER_ID=your_google_drive_folder_id
 
 SMTP_HOST=your_smtp_host
 SMTP_PORT=your_smtp_port
-SMTP_USER=your_smtp_user
-SMTP_PASS=your_smtp_password
-EMAIL_FROM=your_sender_email
+SMTP_USERNAME=your_smtp_user
+SMTP_PASSWORD=your_smtp_password
+FROM_EMAIL=your_sender_email
+FROM_NAME=Document Management System
 ```
+
+For Vercel deployments, add these variables in the project settings for the
+same environment as the deployment. The local `backend/.env` file is not
+available to Vercel.
 
 ### Frontend Configuration
 
