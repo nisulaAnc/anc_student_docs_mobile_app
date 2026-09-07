@@ -68,8 +68,13 @@ const buildCloudinaryPreviewUrl = (url = '', publicId = '', fileName = '') => {
   // Files are uploaded with access_mode:'public', so the stored secure_url
   // is always directly accessible — no signing needed (signed URLs expire).
   if (url) {
-    // Remove an attachment delivery flag so browsers can preview PDFs.
-    return url.replace('/upload/fl_attachment/', '/upload/');
+    // Explicitly request inline delivery so raw PDFs open in the browser.
+    if (!url.includes('/upload/')) return url;
+    if (url.includes('/upload/fl_attachment/')) {
+      return url.replace('/upload/fl_attachment/', '/upload/fl_inline/');
+    }
+    if (url.includes('/upload/fl_inline/')) return url;
+    return url.replace('/upload/', '/upload/fl_inline/');
   }
 
   // Fallback: build URL from publicId if no url stored
