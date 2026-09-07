@@ -39,6 +39,10 @@ const storage = new CloudinaryStorage({
       if (ext === 'pdf' || ext === 'doc' || ext === 'docx') return 'raw';
       return 'image';
     },
+    // Make raw files (PDFs/docs) publicly accessible.
+    // Without this, Cloudinary raw uploads are private by default and
+    // return HTTP 401 when accessed directly via a browser link.
+    access_mode: 'public',
     public_id: async (req, file) => {
       let cfNumber = 'UnknownCF';
       if (req.body.token) {

@@ -65,6 +65,11 @@ const getStudentTokenInfo = async (req, res) => {
 const escapeSheetFormulaValue = (value = '') => String(value).replace(/"/g, '""');
 
 const buildCloudinaryPreviewUrl = (url = '', publicId = '', fileName = '') => {
+  // Files are uploaded with access_mode:'public', so the stored secure_url
+  // is always directly accessible — no signing needed (signed URLs expire).
+  if (url) return url;
+
+  // Fallback: build URL from publicId if no url stored
   if (publicId) {
     const ext = String(fileName).split('.').pop().toLowerCase();
     const resourceType = ['pdf', 'doc', 'docx'].includes(ext) ? 'raw' : 'image';
@@ -245,11 +250,11 @@ const submitDocuments = async (req, res) => {
     const agreementLabel = buildUploadFileName(studentToken.cf_number, 'Agreement', agreementFile?.originalname || agreementFile?.filename || 'signed_agreement.pdf', 'pdf');
     const finalAgreementCell = finalAgreementUrl
       ? buildSheetHyperlink(
-          finalAgreementUrl,
-          agreementLabel || 'Signed Agreement',
-          agreementPublicId,
-          agreementLabel || 'Signed Agreement.pdf'
-        )
+        finalAgreementUrl,
+        agreementLabel || 'Signed Agreement',
+        agreementPublicId,
+        agreementLabel || 'Signed Agreement.pdf'
+      )
       : '';
 
     const sheetRow = [
