@@ -11,6 +11,13 @@ const { getTwoFactorEntry, setTwoFactorEntry } = require('../utils/twoFactorStor
 const { createResetToken, verifyResetToken, RESET_TOKEN_TTL_MS } = require('../utils/passwordResetToken');
 const { validateResetPasswordPayload, validatePasswordChangePayload } = require('../utils/passwordResetValidation');
 
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 const resolveTwoFactorVerification = (entry, otp) => {
   if (!entry?.enabled) return true;
   if (!otp) return false;
@@ -601,17 +608,17 @@ const sendReminderEmail = async (req, res) => {
     }
 
     const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    const studentUrl = `${baseUrl}/student?token=${token}`;
+    const studentUrl = `${baseUrl}/student?token=${encodeURIComponent(token)}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(token)}`;
 
-    const missingList = missingDocs.map((d) => `<li>${d}</li>`).join('');
-    const uploadedList = uploadedDocs.map((d) => `<li>${d}</li>`).join('');
+    const missingList = missingDocs.map((d) => `<li>${escapeHtml(d)}</li>`).join('');
+    const uploadedList = uploadedDocs.map((d) => `<li>${escapeHtml(d)}</li>`).join('');
 
     const html = emailHtml(
       'Action Required – Pending Documents Reminder',
       `<p style="font-size:15px;color:#334155;line-height:1.7;">
-        Dear <strong>${studentToken.student_name}</strong>,<br><br>
-        This is a friendly reminder to submit your pending documents for your registration in <strong>${studentToken.degree_description || studentToken.program}</strong>.<br><br>
+        Dear <strong>${escapeHtml(studentToken.student_name)}</strong>,<br><br>
+        This is a friendly reminder to submit your pending documents for your registration in <strong>${escapeHtml(studentToken.degree_description || studentToken.program)}</strong>.<br><br>
         Your registration is currently <strong style="color:#DC2626;">incomplete</strong>. Please use the secure link below to upload the missing documents.
       </p>
       ${uploadedList ? `<p style="font-size:14px;font-weight:700;color:#16A34A;margin:16px 0 6px;">Documents Received:</p>
@@ -624,7 +631,7 @@ const sendReminderEmail = async (req, res) => {
         <img src="${qrUrl}" alt="QR Code" width="180" height="180" style="border:4px solid #fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.1);" />
         <div style="margin-top:16px;font-size:13px;color:#64748B;">
           Or enter this token manually inside the app:<br>
-          <strong style="font-family:monospace;font-size:16px;color:#0A2463;letter-spacing:2px;display:inline-block;margin-top:6px;padding:8px 16px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">${token}</strong>
+          <strong style="font-family:monospace;font-size:16px;color:#0A2463;letter-spacing:2px;display:inline-block;margin-top:6px;padding:8px 16px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">${escapeHtml(token)}</strong>
         </div>
       </div>`,
       'Upload Missing Documents',
