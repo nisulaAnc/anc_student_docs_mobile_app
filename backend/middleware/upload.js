@@ -83,7 +83,7 @@ const fileFilter = (_req, file, cb) => {
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per file
+  limits: { fileSize: 4 * 1024 * 1024 }, // Keep below Vercel's request body limit.
 });
 
 module.exports = upload;

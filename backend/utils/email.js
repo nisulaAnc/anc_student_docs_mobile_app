@@ -26,7 +26,7 @@ function emailHtml(title, body, btnLabel = '', btnUrl = '') {
     ? `<div style="text-align:center;margin:32px 0;">
         <a href="${btnUrl}" style="display:inline-block;padding:15px 40px;background:linear-gradient(135deg,#0A2463,#1447B8);color:#fff;text-decoration:none;border-radius:12px;font-weight:700;font-size:15px;font-family:sans-serif;">${btnLabel} →</a>
        </div>
-      //  <p style="text-align:center;font-size:12px;color:#94A3B8;">Or copy: <a href="${btnUrl}" style="color:#2563EB;">${btnUrl}</a></p>`
+       <!-- <p style="text-align:center;font-size:12px;color:#94A3B8;">Or copy: <a href="${btnUrl}" style="color:#2563EB;">${btnUrl}</a></p> -->`
     : '';
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
