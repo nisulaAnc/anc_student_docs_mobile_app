@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import HomeScreen from '../screens/HomeScreen';
 import CFRegistrationScreen from '../screens/CFRegistrationScreen';
@@ -13,7 +13,7 @@ import StaffLoginScreen from '../screens/StaffLoginScreen';
 import StaffRegisterScreen from '../screens/StaffRegisterScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
   return (
