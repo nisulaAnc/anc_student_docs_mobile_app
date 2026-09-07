@@ -18,6 +18,8 @@ function createTransporter() {
       user: username,
       pass: password,
     },
+    disableFileAccess: true,
+    disableUrlAccess: true,
   });
 }
 
