@@ -1,13 +1,22 @@
 const nodemailer = require('nodemailer');
 
 function createTransporter() {
+  const host = process.env.SMTP_HOST;
+  const port = Number.parseInt(process.env.SMTP_PORT || '587', 10);
+  const username = process.env.SMTP_USERNAME || process.env.SMTP_USER;
+  const password = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
+
+  if (!host || !username || !password || !Number.isInteger(port)) {
+    throw new Error('SMTP configuration is incomplete. Set SMTP_HOST, SMTP_PORT, SMTP_USERNAME/SMTP_USER, and SMTP_PASSWORD/SMTP_PASS.');
+  }
+
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT),
-    secure: false,
+    host,
+    port,
+    secure: port === 465,
     auth: {
-      user: process.env.SMTP_USERNAME,
-      pass: process.env.SMTP_PASSWORD,
+      user: username,
+      pass: password,
     },
   });
 }
@@ -68,9 +77,14 @@ async function sendEmail(to, subject, htmlBody) {
     throw new Error('Email recipients are invalid or exceed the allowed limit.');
   }
 
+  const fromEmail = process.env.FROM_EMAIL || process.env.EMAIL_FROM;
+  if (!fromEmail) {
+    throw new Error('Email sender is not configured. Set FROM_EMAIL or EMAIL_FROM.');
+  }
+
   const transporter = createTransporter();
   await transporter.sendMail({
-    from: `"${process.env.FROM_NAME}" <${process.env.FROM_EMAIL}>`,
+    from: `"${process.env.FROM_NAME || 'Document Management System'}" <${fromEmail}>`,
     to: recipients,
     subject,
     html: htmlBody,
