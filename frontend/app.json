@@ -32,7 +32,9 @@
     "plugins": [
       "expo-camera",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
