@@ -13,7 +13,7 @@ export default function TopBar({ onBack, rightText, title, rightElement, showSec
     ? require('../../assets/UWL-Logo.png')
     : normalizedUniversity === 'ANC'
       ? require('../../assets/logo.png')
-      : require('../../assets/Docs logo.png');
+      : require('../../assets/docs-logo.png');
   return (
     <View style={[styles.bar, { paddingTop: insets.top + 8 }]}>
       <View style={styles.leftContainer}>

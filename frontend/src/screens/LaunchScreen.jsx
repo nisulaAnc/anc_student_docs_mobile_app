@@ -38,7 +38,7 @@ export default function LaunchScreen({ navigation }) {
             <View style={styles.content}>
                 <View style={styles.logoContainer}>
                     <Image
-                        source={require('../../assets/Docs logo.png')}
+                        source={require('../../assets/docs-logo.png')}
                         style={styles.logo}
                         resizeMode="contain"
                     />

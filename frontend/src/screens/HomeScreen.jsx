@@ -45,7 +45,7 @@ export default function HomeScreen({ navigation, route }) {
     ? require('../../assets/UWL-Logo.png')
     : homeUniversity === 'ANC'
       ? require('../../assets/logo.png')
-      : require('../../assets/Docs logo.png');
+      : require('../../assets/docs-logo.png');
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
