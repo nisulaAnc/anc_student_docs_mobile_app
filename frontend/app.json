@@ -5,9 +5,9 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "icon": "./assets/Docs logo.png",
+    "icon": "./assets/docs-logo.png",
     "splash": {
-      "image": "./assets/Docs logo.png",
+      "image": "./assets/docs-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#1E3A8A"
     },
