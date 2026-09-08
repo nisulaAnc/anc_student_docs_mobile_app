@@ -10,10 +10,10 @@ export default function TopBar({ onBack, rightText, title, rightElement, showSec
   const styles = createStyles(COLORS);
   const normalizedUniversity = String(university || '').toUpperCase();
   const logoSource = normalizedUniversity === 'UWL'
-    ? require('../../assets/UWL-Logo.png')
+    ? require('../../assets/uwl.png')
     : normalizedUniversity === 'ANC'
-      ? require('../../assets/logo.png')
-      : require('../../assets/docs-logo.png');
+      ? require('../../assets/anc.png')
+      : require('../../assets/docs.png');
   return (
     <View style={[styles.bar, { paddingTop: insets.top + 8 }]}>
       <View style={styles.leftContainer}>

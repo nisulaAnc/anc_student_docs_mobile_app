@@ -42,10 +42,10 @@ export default function HomeScreen({ navigation, route }) {
     });
   }, [homeUniversity, requestedUniversity]);
   const homeLogo = homeUniversity === 'UWL'
-    ? require('../../assets/UWL-Logo.png')
+    ? require('../../assets/uwl.png')
     : homeUniversity === 'ANC'
-      ? require('../../assets/logo.png')
-      : require('../../assets/docs-logo.png');
+      ? require('../../assets/anc.png')
+      : require('../../assets/docs.png');
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
