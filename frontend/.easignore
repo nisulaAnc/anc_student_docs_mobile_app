@@ -1,0 +1,14 @@
+# Prevent local Gradle caches and generated Android build artifacts from being packed into the EAS tarball
+android/.gradle
+android/**/build
+android/app/build
+android/build
+.gradle
+**/.gradle
+**/build
+**/dist
+**/.idea
+**/.vscode
+**/.DS_Store
+.git
+node_modules
