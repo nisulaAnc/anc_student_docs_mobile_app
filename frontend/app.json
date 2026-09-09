@@ -16,7 +16,8 @@
       "bundleIdentifier": "com.ancedu.studentdocs",
       "infoPlist": {
         "NSCameraUsageDescription": "Required to scan QR codes and capture documents.",
-        "NSPhotoLibraryUsageDescription": "Required to upload documents from your photo library."
+        "NSPhotoLibraryUsageDescription": "Required to upload documents from your photo library.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
