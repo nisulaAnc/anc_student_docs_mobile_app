@@ -4,9 +4,11 @@ node_modules/
 # Gradle caches
 **/.gradle/
 
-# Build output
-**/build/
-**/dist/
+# Build output (target explicit directories instead of wildcard **/build/)
+android/app/build/
+android/build/
+ios/build/
+dist/
 
 # IDE files
 **/.idea/
