@@ -3,46 +3,6 @@
     "name": "DMS",
     "slug": "anc-student-docs",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "userInterfaceStyle": "light",
-    "icon": "./assets/docs.png",
-    "splash": {
-      "image": "./assets/docs.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1E3A8A"
-    },
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.ancedu.studentdocs",
-      "infoPlist": {
-        "NSCameraUsageDescription": "Required to scan QR codes and capture documents.",
-        "NSPhotoLibraryUsageDescription": "Required to upload documents from your photo library.",
-        "ITSAppUsesNonExemptEncryption": false
-      }
-    },
-    "android": {
-      "package": "com.ancedu.studentdocs",
-      "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "android.permission.CAMERA"
-      ]
-    },
-    "plugins": [
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Required to scan QR codes and capture documents.",
-          "microphonePermission": false,
-          "recordAudioAndroid": false
-        }
-      ],
-      "expo-font",
-      "expo-web-browser",
-      "expo-sharing",
-      "expo-status-bar"
-    ],
     "extra": {
       "eas": {
         "projectId": "2e019adf-76e1-4891-9b06-502335b06350"
