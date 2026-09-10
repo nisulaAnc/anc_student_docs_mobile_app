@@ -9,7 +9,10 @@
       }
     },
     "android": {
-      "package": "com.nisulaanc.ancstudentdocs"
+      "package": "com.nisulaanc.dms"
+    },
+    "ios": {
+      "bundleIdentifier": "com.nisulaanc.dms"
     }
   }
 }
